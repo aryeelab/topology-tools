@@ -51,7 +51,6 @@ RUN apt-get install -y gnupg libssl-dev libcurl4-openssl-dev && \
 RUN Rscript -e "source('http://bioconductor.org/biocLite.R');biocLite('RColorBrewer');biocLite('ggplot2')"
 
 # Install HiCPro
-
 RUN cd /tmp && \
     wget -O HiC-Pro.tar.gz https://github.com/nservant/HiC-Pro/archive/v2.9.0.tar.gz && \
     tar zxf HiC-Pro.tar.gz && \
@@ -62,5 +61,14 @@ RUN cd /tmp && \
 	make configure && \
     make install && \
     cd .. && \
-    rm -fr HiC-Pro*
+    rm -fr HiC-Pro* && \
+    ln -s /HiC-Pro_2.9.0 /HiC-Pro
 
+COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
+COPY chrom_hg38.sizes /HiC-Pro/annotation
+
+COPY Mboi_resfrag_mm10.bed.gz /HiC-Pro/annotation
+COPY chrom_mm10.sizes /HiC-Pro/annotation
+
+RUN cd /HiC-Pro/annotation && \
+    gunzip *.bed.gz
