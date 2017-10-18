@@ -1,0 +1,28 @@
+{
+  "preprocess_hic.hicpro.sample_id": "imr90",
+  "preprocess_hic.hicpro.r1_fastq": ["test_data/hic/imr90_small/SRR1658672_1.small.fastq.gz", "test_data/hic/imr90_small/SRR1658673_1.small.fastq.gz"],
+  "preprocess_hic.hicpro.r2_fastq": ["test_data/hic/imr90_small/SRR1658672_2.small.fastq.gz", "test_data/hic/imr90_small/SRR1658673_2.small.fastq.gz"],
+  "preprocess_hic.hicpro.read1_ext": "_1",
+  "preprocess_hic.hicpro.read2_ext": "_2",
+
+  "preprocess_hic.hicpro.genome_index_tgz": "test_data/bowtie2_index/hs_small_bt2.tar.gz",
+  "preprocess_hic.hicpro.genome_name": "hs_small",
+  "preprocess_hic.hicpro.genome_fragment": "Mboi_resfrag_grch38.bed",
+  "preprocess_hic.hicpro.ligation_site": "GATCGATC",
+  "preprocess_hic.hicpro.genome_size": "chrom_grch38.sizes",
+
+  "preprocess_hic.hicpro.bin_size": "1000 2000",
+
+  "preprocess_hic.hicpro.monitoring_script": "Docker/monitor.sh",
+  "preprocess_hic.hicpro.memory": "16GB",
+  "preprocess_hic.hicpro.cpu": 2,
+  "preprocess_hic.hicpro.disks": "local-disk 100 SSD",
+
+  "preprocess_hic.hicpro.preemptible": 0
+}
+
+
+
+
+
+
