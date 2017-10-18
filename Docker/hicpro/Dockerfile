@@ -64,6 +64,9 @@ RUN cd /tmp && \
     rm -fr HiC-Pro* && \
     ln -s /HiC-Pro_2.9.0 /HiC-Pro
 
+COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
+COPY chrom_grch38.sizes /HiC-Pro/annotation
+
 COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
 COPY chrom_hg38.sizes /HiC-Pro/annotation
 
