@@ -52,12 +52,15 @@ RUN Rscript -e "source('http://bioconductor.org/biocLite.R');biocLite('RColorBre
 
 # Install HiCPro
 
-RUN wget -O HiC-Pro-master.zip http://github.com/nservant/HiC-Pro/archive/master.zip && \
-        unzip HiC-Pro-master.zip && \
-        cd HiC-Pro-master  && \ 
+RUN cd /tmp && \
+    wget -O HiC-Pro.tar.gz https://github.com/nservant/HiC-Pro/archive/v2.9.0.tar.gz && \
+    tar zxf HiC-Pro.tar.gz && \
+    cd HiC-Pro-2.9.0  && \ 
 	sed 's/CLUSTER_SYS = /CLUSTER_SYS = LSF/g' config-install.txt  | sed 's/PREFIX =/PREFIX = \//g'  > tmp && \
 	mv tmp config-install.txt && \
 	ln -sf $(which gcc) /usr/local/bin/x86_64-conda_cos6-linux-gnu-gcc && \
 	make configure && \
-        make install
+    make install && \
+    cd .. && \
+    rm -fr HiC-Pro*
 
