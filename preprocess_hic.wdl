@@ -28,7 +28,7 @@ task hicpro {
         command {
                 
             chmod u+x ${monitoring_script}
-            #${monitoring_script} > monitoring.log &
+            ${monitoring_script} > monitoring.log &
 
             mkdir /bowtie2_index
             tar zxvf ${genome_index_tgz} -C /bowtie2_index
@@ -57,6 +57,9 @@ task hicpro {
             # Zip contact matrices
             zip -rj matrix.zip hicpro_out/hic_results/matrix/${sample_id}/iced hicpro_out/hic_results/matrix/${sample_id}/raw
             
+            # Zip qc plots
+            zip -rj qc_plots.zip hicpro_out/hic_results/pic/${sample_id}
+            
             # Zip logs
             cd hicpro_out/logs/${sample_id}
             zip logs.zip *
@@ -65,7 +68,9 @@ task hicpro {
                 
         output {
             File matrix = "matrix.zip"
-            File logs = "hicpro_out/logs/${sample_id}/logs.zip"
+            File all_valid_pairs = "hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs"
+            File hicpro_logs = "hicpro_out/logs/${sample_id}/logs.zip"
+            File monitoring_log = "monitoring.log"
         }
         
         runtime {
