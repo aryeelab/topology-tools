@@ -1,0 +1,5 @@
+sample_id	fastq1	fastq2
+imr90-rep1	SRR1658672_1.small.fastq.gz SRR1658672_2.small.fastq.gz
+imr90-rep1	SRR1658673_1.small.fastq.gz SRR1658673_2.small.fastq.gz
+imr90-rep2	SRR1658675_1.small.fastq.gz SRR1658675_2.small.fastq.gz
+imr90-rep2	SRR1658676_1.small.fastq.gz SRR1658676_2.small.fastq.gz
