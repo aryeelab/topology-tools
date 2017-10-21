@@ -1,6 +1,30 @@
 workflow preprocess_hic {
-        call hicpro { }
+    String sample_id
+    String r1_fastq
+    String r2_fastq
+    call split as fastq1 {input: str = r1_fastq}
+    call split as fastq2 {input: str = r1_fastq}
+    call hicpro {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out}
+}
+
+task split {
+    String str 
+    String arr = "{ARR[@]}"
+    command <<<
+        IFS=',' read -ra ARR <<< "${str}"
+        for i in "$${arr}"; do
+            echo "$i" | tr -d " " >> out
+        done
+    >>>
+
+    runtime {
+        docker: "debian:stretch"
     }
+    
+    output {
+        Array[String] out = read_lines("out")
+    }
+}
 
 task hicpro {
         Array[File] r1_fastq

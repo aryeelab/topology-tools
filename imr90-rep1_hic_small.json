@@ -1,7 +1,8 @@
 {
-  "preprocess_hic.hicpro.sample_id": "imr90-rep1",
-  "preprocess_hic.hicpro.r1_fastq": ["test_data/hic/imr90_small/SRR1658672_1.small.fastq.gz", "test_data/hic/imr90_small/SRR1658673_1.small.fastq.gz"],
-  "preprocess_hic.hicpro.r2_fastq": ["test_data/hic/imr90_small/SRR1658672_2.small.fastq.gz", "test_data/hic/imr90_small/SRR1658673_2.small.fastq.gz"],
+  "preprocess_hic.sample_id": "imr90-rep1",
+  "preprocess_hic.r1_fastq": "test_data/hic/imr90_small/SRR1658672_1.small.fastq.gz,test_data/hic/imr90_small/SRR1658673_1.small.fastq.gz",
+  "preprocess_hic.r2_fastq": "test_data/hic/imr90_small/SRR1658672_2.small.fastq.gz,test_data/hic/imr90_small/SRR1658673_2.small.fastq.gz",
+
   "preprocess_hic.hicpro.read1_ext": "_1",
   "preprocess_hic.hicpro.read2_ext": "_2",
 
