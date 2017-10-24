@@ -97,21 +97,27 @@ task hicpro {
             # Zip contact matrices
             zip -rj matrix.zip hicpro_out/hic_results/matrix/${sample_id}/iced hicpro_out/hic_results/matrix/${sample_id}/raw
             
+            # Zip qc stats
+            zip -j qc_stats.zip \
+                hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs.mergestat \
+                hicpro_out/hic_results/data/${sample_id}/${sample_id}.mRSstat
+
             # Zip qc plots
             zip -rj qc_plots.zip hicpro_out/hic_results/pic/${sample_id}
             
             # Zip logs
-            cd hicpro_out/logs/${sample_id}
-            zip logs.zip *
+            zip -j logs.zip hicpro_out/logs/${sample_id}/*
 
         >>>
                 
         output {
             File matrix = "matrix.zip"
             File all_valid_pairs = "hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs"
-            File hicpro_logs = "hicpro_out/logs/${sample_id}/logs.zip"
+            File qc_stats = "qc_stats.zip"
+            File hicpro_logs = "logs.zip"
             File monitoring_log = "monitoring.log"
         }
+        
         
         runtime {
             continueOnReturnCode: false
