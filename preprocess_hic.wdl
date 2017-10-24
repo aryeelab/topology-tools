@@ -3,7 +3,7 @@ workflow preprocess_hic {
     String r1_fastq
     String r2_fastq
     call split as fastq1 {input: str = r1_fastq}
-    call split as fastq2 {input: str = r1_fastq}
+    call split as fastq2 {input: str = r2_fastq}
     call hicpro {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out}
 }
 
@@ -37,9 +37,11 @@ task hicpro {
         String genome_size
         String ligation_site
         
-        String read1_ext
-        String read2_ext
-        String bin_size="1000 2000"
+        String bowtie2_cores
+        
+        String read1_ext = "_R1_"
+        String read2_ext = "_R2_" 
+        String bin_size
         String min_mapq="20"
         
         File monitoring_script
@@ -49,18 +51,21 @@ task hicpro {
         Int cpu
         Int preemptible
         
-        command {
+        String dollar = "$"
+        String at = "@"
+        
+        command <<<
                 
             chmod u+x ${monitoring_script}
             ${monitoring_script} > monitoring.log &
 
-            mkdir /bowtie2_index
-            tar zxvf ${genome_index_tgz} -C /bowtie2_index
+            mkdir $PWD/bowtie2_index
+            tar zxvf ${genome_index_tgz} -C $PWD/bowtie2_index
 
             # Set up hicpro config file
             CONFIG=/HiC-Pro/config-hicpro.txt
-            sed -i "s/BOWTIE2_IDX_PATH.*/BOWTIE2_IDX_PATH = \/bowtie2_index/" $CONFIG
-            sed -i "s/N_CPU.*/N_CPU = ${cpu}/" $CONFIG
+            sed -i "s|BOWTIE2_IDX_PATH.*|BOWTIE2_IDX_PATH = $PWD/bowtie2_index|" $CONFIG
+            sed -i "s/N_CPU.*/N_CPU = ${bowtie2_cores}/" $CONFIG
             sed -i "s/PAIR1_EXT.*/PAIR1_EXT = ${read1_ext}/" $CONFIG
             sed -i "s/PAIR2_EXT.*/PAIR2_EXT = ${read2_ext}/" $CONFIG
             sed -i "s/BIN_SIZE.*/BIN_SIZE = ${bin_size}/" $CONFIG
@@ -70,13 +75,24 @@ task hicpro {
             sed -i "s/REFERENCE_GENOME.*/REFERENCE_GENOME = ${genome_name}/" $CONFIG
             sed -i "s/GENOME_SIZE.*/GENOME_SIZE = ${genome_size}/" $CONFIG
 
-            # Set up input fastq directory
-            mkdir -p /fastq/${sample_id}
-            for fq in ${sep=' ' r1_fastq}; do ln -s $fq /fastq/${sample_id}/; done
-            for fq in ${sep=' ' r2_fastq}; do ln -s $fq /fastq/${sample_id}/; done
-
+            # Set up input fastq directory 
+            # Create symlinks with consistent naming to original fastqs
+            mkdir -p fastq/${sample_id}
+            r1_fastq=(${sep=' ' r1_fastq})
+            r2_fastq=(${sep=' ' r2_fastq})            
+            for i in ${dollar}{!r1_fastq[@]}; do
+              # Read 1
+              CMD="ln -s ${dollar}{r1_fastq[$i]} fastq/${sample_id}/${sample_id}_R1_$i.fastq.gz"
+              echo "Symlinking fastq1: $CMD"
+              $CMD
+              # Read 2
+              CMD="ln -s ${dollar}{r2_fastq[$i]} fastq/${sample_id}/${sample_id}_R2_$i.fastq.gz"
+              echo "Symlinking fastq2: $CMD"
+              $CMD
+            done
+                        
             # Run HiC-Pro
-            /HiC-Pro/bin/HiC-Pro -i /fastq -o hicpro_out -c /HiC-Pro/config-hicpro.txt
+            /HiC-Pro/bin/HiC-Pro -i fastq -o hicpro_out -c /HiC-Pro/config-hicpro.txt
             
             # Zip contact matrices
             zip -rj matrix.zip hicpro_out/hic_results/matrix/${sample_id}/iced hicpro_out/hic_results/matrix/${sample_id}/raw
@@ -88,7 +104,7 @@ task hicpro {
             cd hicpro_out/logs/${sample_id}
             zip logs.zip *
 
-        }
+        >>>
                 
         output {
             File matrix = "matrix.zip"
