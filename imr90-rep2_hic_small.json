@@ -1,7 +1,7 @@
 {
-  "preprocess_hic.hicpro.sample_id": "imr90-rep2",
-  "preprocess_hic.hicpro.r1_fastq": "test_data/hic/imr90_small/SRR1658675_1.small.fastq.gz,test_data/hic/imr90_small/SRR1658676_1.small.fastq.gz",
-  "preprocess_hic.hicpro.r2_fastq": "test_data/hic/imr90_small/SRR1658675_2.small.fastq.gz,test_data/hic/imr90_small/SRR1658676_2.small.fastq.gz",
+  "preprocess_hic.sample_id": "imr90-rep2",
+  "preprocess_hic.r1_fastq": "test_data/hic/imr90_small/SRR1658675_1.small.fastq.gz,test_data/hic/imr90_small/SRR1658676_1.small.fastq.gz",
+  "preprocess_hic.r2_fastq": "test_data/hic/imr90_small/SRR1658675_2.small.fastq.gz,test_data/hic/imr90_small/SRR1658676_2.small.fastq.gz",
 
   "preprocess_hic.hicpro.genome_index_tgz": "test_data/bowtie2_index/hs_small_bt2.tar.gz",
   "preprocess_hic.hicpro.genome_name": "hs_small",
