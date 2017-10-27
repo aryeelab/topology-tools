@@ -7,6 +7,7 @@ workflow preprocess_hic {
 
     call split as fastq1 {input: str = r1_fastq}
     call split as fastq2 {input: str = r2_fastq}
+    call count_pairs {input: r1_fastq = fastq1.out}
     call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out, genome_size = genome_size, monitoring_script = monitoring_script}
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_align.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script}
 }
@@ -23,11 +24,31 @@ task split {
 
     runtime {
         docker: "debian:stretch"
+        disks: "local-disk 200 SSD"
     }
     
     output {
         Array[String] out = read_lines("out")
     }
+}
+
+task count_pairs {
+    Array[File] r1_fastq
+    String dollar = "$"
+        
+    command <<<
+        num_lines=`zcat ${sep=' ' r1_fastq} | wc -l`
+        let "num_pairs=${dollar}num_lines/4"
+        echo ${dollar}num_pairs
+    >>>
+
+    runtime {
+        docker: "debian:stretch"
+    }
+    
+    output {
+        Int num_pairs = read_int(stdout())
+    }   
 }
 
 task hicpro_align {
