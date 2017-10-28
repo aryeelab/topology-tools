@@ -9,6 +9,7 @@ workflow preprocess_hic {
     call split as fastq2 {input: str = r2_fastq}
     call count_pairs {input: r1_fastq = fastq1.out}
     call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out, genome_size = genome_size, monitoring_script = monitoring_script}
+    call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_align.qc_stats}
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_align.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script}
 }
 
@@ -144,6 +145,29 @@ task hicpro_align {
         }
 }
 
+task cis_long_range_percent {
+    String sample_id
+    Int num_pairs
+    File qc_stats
+
+    String dollar = "$"
+
+        
+    command <<<
+        unzip -qq ${qc_stats}
+        cis_long_range=${dollar}(cat ${sample_id}_allValidPairs.mergestat | grep cis_longRange | cut -f2)
+        let "percent=100*$cis_long_range/${num_pairs}"
+        echo $percent
+    >>>
+
+    runtime {
+        docker: "aryeelab/hicpro:latest"
+    }
+    
+    output {
+        Int percent = read_int(stdout())
+    }  
+}
 
 task hicpro_contact_matrices {
         File all_valid_pairs
@@ -160,11 +184,12 @@ task hicpro_contact_matrices {
             chmod u+x ${monitoring_script}
             ${monitoring_script} > monitoring.log &
 
+            CONFIG=/HiC-Pro/config-hicpro.txt
             sed -i "s/BIN_SIZE.*/BIN_SIZE = ${bin_size}/" $CONFIG
             sed -i "s/GENOME_SIZE.*/GENOME_SIZE = ${genome_size}/" $CONFIG
 
             mkdir -p pairs/${sample_id}
-            ln -s ${all_valid_pairs} pairs/${sample_id}/
+            ln -sf   ${all_valid_pairs} pairs/${sample_id}/
                         
             # Run HiC-Pro
             /HiC-Pro/bin/HiC-Pro -s build_contact_maps -s ice_norm -i pairs -o hicpro_out -c /HiC-Pro/config-hicpro.txt
