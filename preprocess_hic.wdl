@@ -25,7 +25,6 @@ task split {
 
     runtime {
         docker: "debian:stretch"
-        disks: "local-disk 200 SSD"
     }
     
     output {
@@ -45,6 +44,7 @@ task count_pairs {
 
     runtime {
         docker: "debian:stretch"
+        disks: "local-disk 200 SSD"
     }
     
     output {
