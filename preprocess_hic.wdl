@@ -7,8 +7,13 @@ workflow preprocess_hic {
 
     call split as fastq1 {input: str = r1_fastq}
     call split as fastq2 {input: str = r2_fastq}
-    call count_pairs {input: r1_fastq = fastq1.out}
-    call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out, genome_size = genome_size, monitoring_script = monitoring_script}
+    
+    scatter (fq1 in fastq1.out) { call file_size_gb as fq1_size { input: infile = fq1 } }
+    scatter (fq2 in fastq2.out) { call file_size_gb as fq2_size { input: infile = fq2 } }    
+    call calculate_fastq_size {input: size1 = fq1_size.gb, size2 = fq2_size.gb}
+
+    call count_pairs {input: r1_fastq = fastq1.out, disk_gb = 10 + calculate_fastq_size.gb * 3}
+    call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 10}
     call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_align.qc_stats}
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_align.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script}
 }
@@ -32,8 +37,33 @@ task split {
     }
 }
 
+task file_size_gb {
+  File infile  
+  Float f = size(infile, "GB")
+  String s = f 
+  String string_before_decimal = sub(s, "\\..*", "") 
+  Int final_int = string_before_decimal
+  command {} 
+  output {
+        Int gb = final_int
+  }      
+}
+
+task calculate_fastq_size {
+    Array[Int] size1
+    Array[Int] size2
+    command { 
+        let "gb=${sep=' + ' size1} + ${sep=' + ' size2}"
+        echo $gb
+    }
+    output {
+      Int gb = read_int(stdout())
+    }      
+}
+
 task count_pairs {
     Array[File] r1_fastq
+    Int disk_gb
     String dollar = "$"
         
     command <<<
@@ -44,7 +74,7 @@ task count_pairs {
 
     runtime {
         docker: "debian:stretch"
-        disks: "local-disk 200 SSD"
+        disks: "local-disk " + disk_gb + " SSD"
     }
     
     output {
@@ -72,7 +102,7 @@ task hicpro_align {
         File monitoring_script
         
         String memory
-        String disks
+        Int disk_gb
         Int cpu
         Int preemptible
         
@@ -138,9 +168,9 @@ task hicpro_align {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: memory
-            disks: disks
             cpu: cpu
+            memory: memory
+            disks: "local-disk " + disk_gb + " SSD"        
             preemptible: preemptible
         }
 }
