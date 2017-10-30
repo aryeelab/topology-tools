@@ -42,13 +42,14 @@ task file_size_gb {
     Float f = size(infile, "GB")
     String s = f 
     String string_before_decimal = sub(s, "\\..*", "") 
-    Int final_int = string_before_decimal
+    Int gb_int = string_before_decimal
     command {} 
     runtime {
         docker: "debian:stretch"
+        disks: "local-disk " + (10 + gb_int) + " SSD"
     }
     output {
-        Int gb = final_int
+        Int gb = gb_int
     }      
 }
 
