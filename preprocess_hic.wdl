@@ -38,15 +38,18 @@ task split {
 }
 
 task file_size_gb {
-  File infile  
-  Float f = size(infile, "GB")
-  String s = f 
-  String string_before_decimal = sub(s, "\\..*", "") 
-  Int final_int = string_before_decimal
-  command {} 
-  output {
+    File infile  
+    Float f = size(infile, "GB")
+    String s = f 
+    String string_before_decimal = sub(s, "\\..*", "") 
+    Int final_int = string_before_decimal
+    command {} 
+    runtime {
+        docker: "debian:stretch"
+    }
+    output {
         Int gb = final_int
-  }      
+    }      
 }
 
 task calculate_fastq_size {
@@ -56,8 +59,11 @@ task calculate_fastq_size {
         let "gb=${sep=' + ' size1} + ${sep=' + ' size2}"
         echo $gb
     }
+    runtime {
+        docker: "debian:stretch"
+    }
     output {
-      Int gb = read_int(stdout())
+        Int gb = read_int(stdout())
     }      
 }
 
