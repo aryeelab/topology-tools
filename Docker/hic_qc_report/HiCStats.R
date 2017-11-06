@@ -33,6 +33,8 @@ if( length(opt_parser) > 3 ){
 #prefix <- "muestras"
 #samples <- "HiC_1904,HiC_2834,HiC_5328,HiC_8416"
 
+mapFiles <- list.files( hicProDir, pattern=".mpairstat", full.names=TRUE, recursive=TRUE )
+names( mapFiles ) <- gsub( ".mpairstat", "", basename(mapFiles) )
 statFiles <- list.files( hicProDir, pattern="mRSstat", full.names=TRUE, recursive=TRUE )
 names( statFiles ) <- gsub( ".mRSstat", "", basename(statFiles) )
 mergeFiles <- list.files( hicProDir, pattern="_allValidPairs.mergestat", full.names=TRUE, recursive=TRUE )
@@ -40,6 +42,7 @@ names( mergeFiles ) <- gsub("_allValidPairs.mergestat", "", basename( mergeFiles
 
 if (!is.null(samples)) {
     samples <- strsplit(samples, ",")[[1]]
+    mapFiles <- mapFiles[samples]
     statFiles <- statFiles[samples]
     mergeFiles <- mergeFiles[samples]
 }
@@ -56,6 +59,11 @@ if( !identical( samples, "all" ) ){
     }
 }
 
+if( !all( file.exists( mapFiles ) ) ){
+  missingSample <- samples[!file.exists( mapFiles )]
+  stop(sprintf("The '*.mpairstat' files could not be found for the following sample(s):\n%s",
+               paste(missingSample, collapse="\n")))
+}
 if( !all( file.exists( statFiles ) ) ){
     missingSample <- samples[!file.exists( statFiles )]
     stop(sprintf("The '*.mRSstat' files could not be found for the following sample(s):\n%s",
@@ -67,17 +75,26 @@ if( !all( file.exists( mergeFiles ) ) ){
                  paste(missingSample, collapse="\n")))
 }
 
+allMapData <- melt( lapply( mapFiles, read.table, fill=TRUE),
+                    id.vars="V1",
+                    value.name="numberOfReads")
+colnames( allMapData ) <- c( "mapStat", "dummy", "numberOfReads", "sample" )
+tmp <- allMapData %>% filter(mapStat=="Total_pairs_processed" & dummy=="V2") 
+totalReadNum <- tmp$numberOfReads
+names(totalReadNum) <- tmp$sample
+
 allMergeData <- melt( lapply( mergeFiles, read.table, fill=TRUE),
                      id.vars="V1",
                      value.name="numberOfReads")
 colnames( allMergeData ) <- c( "interactionType", "dummy", "numberOfReads", "sample" )
 allMergeData <- allMergeData[,colnames(allMergeData) !="dummy"]
+
 allStatData <- melt( lapply( statFiles, read.table, fill=TRUE ),
                     id.vars="V1", value.name="numberOfReads" )
 colnames( allStatData ) <- c( "interactionType", "dummy", "numberOfReads", "sample" )
 allStatData <- allStatData[,colnames(allStatData) !="dummy"]
+
 validInteractionNumbers <- filter(allStatData, grepl( "pairs$", allStatData$interactionType))
-totalReadNum <- with( validInteractionNumbers, tapply( numberOfReads, sample, sum ))
 validInteractionNumbers <- mutate( validInteractionNumbers,
        fractionOfReads=validInteractionNumbers$numberOfReads / totalReadNum[validInteractionNumbers$sample] )
 p1 <- ggplot(data.frame( totalReadPairs=totalReadNum, sample=names( totalReadNum ) ),
