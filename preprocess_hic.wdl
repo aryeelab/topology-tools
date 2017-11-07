@@ -157,6 +157,7 @@ task hicpro_align {
             
             # Zip qc stats
             zip -j qc_stats.zip \
+                hicpro_out/bowtie_results/bwt2/${sample_id}/${sample_id}.mpairstat \
                 hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs.mergestat \
                 hicpro_out/hic_results/data/${sample_id}/${sample_id}.mRSstat
             
