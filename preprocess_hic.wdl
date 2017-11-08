@@ -39,17 +39,17 @@ task split {
 
 task file_size_gb {
     File infile  
-    Float f = size(infile, "GB")
-    String s = f 
-    String string_before_decimal = sub(s, "\\..*", "") 
-    Int gb_int = string_before_decimal
     command {} 
     runtime {
         docker: "debian:stretch"
-        disks: "local-disk " + (10 + gb_int) + " SSD"
+        #disks: "local-disk " + (10 + gb_int) + " SSD"
+        disks: "local-disk 100 SSD"
     }
     output {
-        Int gb = gb_int
+        Float f = size(infile, "GB")
+        String s = f 
+        String string_before_decimal = sub(s, "\\..*", "") 
+        Int gb = string_before_decimal
     }      
 }
 
