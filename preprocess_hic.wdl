@@ -2,23 +2,39 @@ workflow preprocess_hic {
     String sample_id
     String r1_fastq
     String r2_fastq
+    Int num_reads_per_chunk
     String genome_size
     File monitoring_script
 
-    call split as fastq1 {input: str = r1_fastq}
-    call split as fastq2 {input: str = r2_fastq}
-    
+    # Split the comma-separated string of fastq file names into an array
+    call split_string_into_array as fastq1 {input: str = r1_fastq}
+    call split_string_into_array as fastq2 {input: str = r2_fastq}
+        
+    # Calculate the total fastq file size
     scatter (fq1 in fastq1.out) { call file_size_gb as fq1_size { input: infile = fq1 } }
     scatter (fq2 in fastq2.out) { call file_size_gb as fq2_size { input: infile = fq2 } }    
     call calculate_fastq_size {input: size1 = fq1_size.gb, size2 = fq2_size.gb}
 
+    # Count the number of read pairs
     call count_pairs {input: r1_fastq = fastq1.out, disk_gb = 10 + calculate_fastq_size.gb * 3}
-    call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq1.out, r2_fastq = fastq2.out, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 10}
-    call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_align.qc_stats}
-    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_align.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script}
+
+    # Split the fastq files into chunks for parallelization
+    call split_fastq_files  { input: r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, disk_gb = 10 + calculate_fastq_size.gb * 3 }
+
+    # Run HiC-Pro align on each fastq chunk
+    scatter (fastq_pair in split_fastq_files.fastq_pairs) { call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq_pair.left, r2_fastq = fastq_pair.right, genome_size = genome_size, monitoring_script = monitoring_script} }
+    
+    # Merge the HiC-Pro align results 
+    call hicpro_merge { input: sample_id = sample_id, hicpro_out_tars = hicpro_align.hicpro_out, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 10}
+
+    # Calculate the cis-long range percent metric
+    call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_merge.qc_stats}
+    
+    # Compute raw and normalized contact matrices
+    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 3}
 }
 
-task split {
+task split_string_into_array {
     String str 
     String arr = "{ARR[@]}"
     command <<<
@@ -37,12 +53,35 @@ task split {
     }
 }
 
+task split_fastq_files {
+    Array[File] r1_in
+    Array[File] r2_in
+    Int num_lines_per_chunk
+    Int disk_gb
+    
+    command {
+        zcat ${sep=' ' r1_in} | split -d -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - part-
+        zcat ${sep=' ' r2_in} | split -d -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - part-
+    }
+    
+     runtime {
+        continueOnReturnCode: false
+        docker: "debian:stretch"
+        cpu: 8
+        disks: "local-disk " + disk_gb + " SSD"        
+    }   
+    output {
+        Array[File] r1_out = glob("*_R1.fastq.gz")
+        Array[File] r2_out = glob("*_R2.fastq.gz")        
+        Array[Pair[File, File]] fastq_pairs = zip(r1_out, r2_out)
+    }
+}
+
 task file_size_gb {
     File infile  
     command {} 
     runtime {
         docker: "debian:stretch"
-        #disks: "local-disk " + (10 + gb_int) + " SSD"
         disks: "local-disk 100 SSD"
     }
     output {
@@ -90,8 +129,8 @@ task count_pairs {
 }
 
 task hicpro_align {
-        Array[File] r1_fastq
-        Array[File] r2_fastq
+        File r1_fastq
+        File r2_fastq
         String sample_id
         
         File genome_index_tgz
@@ -102,14 +141,13 @@ task hicpro_align {
         
         String bowtie2_cores
         
-        String read1_ext = "_R1_"
-        String read2_ext = "_R2_" 
+        String read1_ext = "_R1"
+        String read2_ext = "_R2" 
         String min_mapq="20"
         
         File monitoring_script
         
         String memory
-        Int disk_gb
         Int cpu
         Int preemptible
         
@@ -136,40 +174,28 @@ task hicpro_align {
             sed -i "s/REFERENCE_GENOME.*/REFERENCE_GENOME = ${genome_name}/" $CONFIG
             sed -i "s/GENOME_SIZE.*/GENOME_SIZE = ${genome_size}/" $CONFIG
 
-            # Set up input fastq directory 
-            # Create symlinks with consistent naming to original fastqs
-            mkdir -p fastq/${sample_id}
-            r1_fastq=(${sep=' ' r1_fastq})
-            r2_fastq=(${sep=' ' r2_fastq})            
-            for i in ${dollar}{!r1_fastq[@]}; do
-              # Read 1
-              CMD="ln -s ${dollar}{r1_fastq[$i]} fastq/${sample_id}/${sample_id}_R1_$i.fastq.gz"
-              echo "Symlinking fastq1: $CMD"
-              $CMD
-              # Read 2
-              CMD="ln -s ${dollar}{r2_fastq[$i]} fastq/${sample_id}/${sample_id}_R2_$i.fastq.gz"
-              echo "Symlinking fastq2: $CMD"
-              $CMD
-            done
-                        
+            # Set up input fastq directory using symlinks to fastqs
+            mkdir -p rawdata/${sample_id}
+            ln -s ${r1_fastq} rawdata/${sample_id}/
+            ln -s ${r2_fastq} rawdata/${sample_id}/
+            
+            mkdir tmp
+            mkdir logs     
+            #echo ${sample_id}/`basename ${r1_fastq}` > inputfiles.txt
+            (cd rawdata && ls */*_R1.fastq.gz) > inputfiles.txt
+            export FASTQFILE=inputfiles.txt
+            export LSB_JOBINDEX=1
+    
             # Run HiC-Pro
-            /HiC-Pro/bin/HiC-Pro -s mapping -s proc_hic -s quality_checks -s merge_persample -i fastq -o hicpro_out -c /HiC-Pro/config-hicpro.txt
+            # all_sub : configure bowtie_global bowtie_local bowtie_combine mapping_stat bowtie_pairing mapped_2hic_fragments 
+            make --file //HiC-Pro_2.9.0/scripts/Makefile CONFIG_FILE=/HiC-Pro/config-hicpro.txt CONFIG_SYS=//HiC-Pro_2.9.0/config-system.txt all_sub 2>&1
             
-            # Zip qc stats
-            zip -j qc_stats.zip \
-                hicpro_out/bowtie_results/bwt2/${sample_id}/${sample_id}.mpairstat \
-                hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs.mergestat \
-                hicpro_out/hic_results/data/${sample_id}/${sample_id}.mRSstat
-            
-            # Zip logs
-            zip -j logs.zip hicpro_out/logs/${sample_id}/*
-
+            #partname=$(echo $(basename imr90-rep1/part-01_R1.fastq.gz) | sed 's/_R1.fastq.gz//')
+            tar -cvpf hicpro_out.tar bowtie_results/bwt2 hic_results logs
         >>>
                 
         output {
-            File all_valid_pairs = "hicpro_out/hic_results/data/${sample_id}/${sample_id}_allValidPairs"
-            File qc_stats = "qc_stats.zip"
-            File hicpro_logs = "logs.zip"
+            File hicpro_out = "hicpro_out.tar"
             File monitoring_log = "monitoring.log"
         }
                 
@@ -178,9 +204,55 @@ task hicpro_align {
             docker: "aryeelab/hicpro:latest"
             cpu: cpu
             memory: memory
-            disks: "local-disk " + disk_gb + " SSD"        
+            disks: "local-disk 20 SSD"        
             preemptible: preemptible
         }
+}
+
+
+task hicpro_merge {
+    String sample_id
+    Array[File] hicpro_out_tars
+    
+    File monitoring_script
+    Int disk_gb
+    
+    command <<<
+    
+           chmod u+x ${monitoring_script}
+            ${monitoring_script} > monitoring.log &
+ 
+            for tar in ${sep=' ' hicpro_out_tars}; do
+                tar xvf $tar
+            done;
+            
+            # Run HiC-Pro
+            /HiC-Pro/bin/HiC-Pro -s merge_persample -i hic_results/data -o . -c /HiC-Pro/config-hicpro.txt
+    
+            # Zip qc stats
+            zip -j qc_stats.zip \
+                bowtie_results/bwt2/${sample_id}/${sample_id}.mpairstat \
+                hic_results/data/${sample_id}/${sample_id}_allValidPairs.mergestat \
+                hic_results/data/${sample_id}/${sample_id}.mRSstat
+            
+            # Zip logs
+            zip -j logs.zip logs/${sample_id}/*
+
+    >>>
+    
+            runtime {
+            continueOnReturnCode: false
+            docker: "aryeelab/hicpro:latest"
+            cpu: 4            
+            disks: "local-disk " + disk_gb + " SSD"        
+        }
+        
+    output {
+            File monitoring_log = "monitoring.log"
+            File all_valid_pairs = "hic_results/data/${sample_id}/${sample_id}_allValidPairs"
+            File qc_stats = "qc_stats.zip"
+            File hicpro_logs = "logs.zip"
+    }
 }
 
 task cis_long_range_percent {
@@ -214,7 +286,7 @@ task hicpro_contact_matrices {
         String genome_size
         String bin_size
 
-        
+        Int disk_gb
         File monitoring_script
                         
         command <<<
@@ -250,11 +322,7 @@ task hicpro_contact_matrices {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "8GB"
-            disks: "local-disk 200 SSD"
+            memory: "16GB"
+            disks: "local-disk " + disk_gb + " SSD"        
         }
 }
-
-
-
-

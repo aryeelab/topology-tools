@@ -68,6 +68,18 @@ RUN cd /tmp && \
     rm -fr HiC-Pro* && \
     ln -s /HiC-Pro_2.9.0 /HiC-Pro
 
+# Install a compatible version of gawk
+RUN cd /tmp && \
+    wget http://ftp.gnu.org/gnu/gawk/gawk-3.1.7.tar.gz && \
+    tar zxf gawk-3.1.7.tar.gz && \
+    cd gawk-3.1.7 && \
+    ./configure --prefix=/usr --libexecdir=/usr/lib && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -fr gawk-3.1.7* && \
+    ln -sf /usr/bin/gawk /etc/alternatives/awk
+
 COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
 COPY chrom_grch38.sizes /HiC-Pro/annotation
 
