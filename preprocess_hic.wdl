@@ -67,7 +67,7 @@ task split_fastq_files {
      runtime {
         continueOnReturnCode: false
         docker: "debian:stretch"
-        cpu: 8
+        cpu: 4
         disks: "local-disk " + disk_gb + " SSD"        
     }   
     output {
