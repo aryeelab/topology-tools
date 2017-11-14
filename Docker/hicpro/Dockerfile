@@ -80,6 +80,9 @@ RUN cd /tmp && \
     rm -fr gawk-3.1.7* && \
     ln -sf /usr/bin/gawk /etc/alternatives/awk
 
+# Install bc for summing input fastq sizes
+RUN apt-get install -y bc
+
 COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
 COPY chrom_grch38.sizes /HiC-Pro/annotation
 

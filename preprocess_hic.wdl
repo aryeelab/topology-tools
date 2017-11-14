@@ -13,25 +13,25 @@ workflow preprocess_hic {
     # Calculate the total fastq file size
     scatter (fq1 in fastq1.out) { call file_size_gb as fq1_size { input: infile = fq1 } }
     scatter (fq2 in fastq2.out) { call file_size_gb as fq2_size { input: infile = fq2 } }    
-    call calculate_fastq_size {input: size1 = fq1_size.gb, size2 = fq2_size.gb}
+    call sum_fastq_size {input: size1 = fq1_size.gb, size2 = fq2_size.gb}
 
     # Count the number of read pairs
-    call count_pairs {input: r1_fastq = fastq1.out, disk_gb = 10 + calculate_fastq_size.gb * 3}
+    call count_pairs {input: r1_fastq = fastq1.out, disk_gb = 10 + sum_fastq_size.gb * 3}
 
     # Split the fastq files into chunks for parallelization
-    call split_fastq_files  { input: r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, disk_gb = 10 + calculate_fastq_size.gb * 3 }
+    call split_fastq_files  { input: r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, disk_gb = 20 + sum_fastq_size.gb * 3 }
 
     # Run HiC-Pro align on each fastq chunk
     scatter (fastq_pair in split_fastq_files.fastq_pairs) { call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq_pair.left, r2_fastq = fastq_pair.right, genome_size = genome_size, monitoring_script = monitoring_script} }
     
     # Merge the HiC-Pro align results 
-    call hicpro_merge { input: sample_id = sample_id, hicpro_out_tars = hicpro_align.hicpro_out, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 10}
+    call hicpro_merge { input: sample_id = sample_id, hicpro_out_tars = hicpro_align.hicpro_out, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 10}
 
     # Calculate the cis-long range percent metric
     call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_merge.qc_stats}
     
     # Compute raw and normalized contact matrices
-    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + calculate_fastq_size.gb * 3}
+    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 }
 
 task split_string_into_array {
@@ -85,25 +85,21 @@ task file_size_gb {
         disks: "local-disk 100 SSD"
     }
     output {
-        Float f = size(infile, "GB")
-        String s = f 
-        String string_before_decimal = sub(s, "\\..*", "") 
-        Int gb = string_before_decimal
+        Float gb = size(infile, "GB")
     }      
 }
 
-task calculate_fastq_size {
-    Array[Int] size1
-    Array[Int] size2
+task sum_fastq_size {
+    Array[Float] size1
+    Array[Float] size2
     command { 
-        let "gb=${sep=' + ' size1} + ${sep=' + ' size2}"
-        echo $gb
+        echo "(${sep=' + ' size1} + ${sep=' + ' size2})/1" | bc
     }
     runtime {
-        docker: "debian:stretch"
+        docker: "aryeelab/hicpro:latest"
     }
     output {
-        Int gb = read_int(stdout())
+        Int gb = read_int(stdout())        
     }      
 }
 
