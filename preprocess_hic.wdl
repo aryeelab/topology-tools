@@ -93,7 +93,7 @@ task sum_fastq_size {
     Array[Float] size1
     Array[Float] size2
     command { 
-        echo "(${sep=' + ' size1} + ${sep=' + ' size2})/1" | bc
+        echo "(${sep=' + ' size1} + ${sep=' + ' size2})/1" | sed -e 's/[eE]+*/\*10\^/g' | bc
     }
     runtime {
         docker: "aryeelab/hicpro:latest"
