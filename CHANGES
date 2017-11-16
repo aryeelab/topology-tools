@@ -1,0 +1,8 @@
+## FireCloud
+### preprocess_hic_mboi_hg38
+
+Snapshot ID 24
+    - More accurate fastq file size calculation for many small files
+    
+Snapshot ID 25
+    - Fix to allow calculation of very small fastq sizes (that use scientific notation)    
