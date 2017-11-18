@@ -4,6 +4,8 @@ workflow preprocess_hic {
     String r2_fastq
     Int num_reads_per_chunk
     String genome_size
+    String bin_size
+    
     File monitoring_script
 
     # Split the comma-separated string of fastq file names into an array
@@ -30,8 +32,11 @@ workflow preprocess_hic {
     # Calculate the cis-long range percent metric
     call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_merge.qc_stats}
     
-    # Compute raw and normalized contact matrices
-    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
+    # Compute raw and normalized hicpro contact matrices
+    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
+
+    # Generate normalized cooler file
+    call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 }
 
 task split_string_into_array {
@@ -321,4 +326,51 @@ task hicpro_contact_matrices {
             memory: "16GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
+}
+
+task cooler {
+    String sample_id
+    File all_valid_pairs
+    String genome_size
+    String bin_size
+    
+    Int disk_gb  
+    File monitoring_script
+
+    command <<<
+
+        chmod u+x ${monitoring_script}
+        ${monitoring_script} > monitoring.log &
+    
+        echo`date`: Choosing smallest bin size of ${bin_size}
+        RES=$(echo "${bin_size}" | tr " " "\n" | sort | head -n1)
+    
+        echo `date`: Starting makebins
+        cooler makebins /annotation/${genome_size} $RES > bins.bed
+
+        echo `date`: Starting cooler csort
+        cooler csort --nproc 3 --chrom1 2 --pos1 3 --chrom2 5 --pos2 6 \
+             -o allValidPairs.sorted  ${all_valid_pairs} /annotation/${genome_size}
+
+        echo `date`: Starting cooler cload pairix
+        cooler cload pairix bins.bed allValidPairs.sorted ${sample_id}.cool
+
+        echo `date`: Starting cooler zoomify
+        cooler zoomify --balance ${sample_id}.cool
+
+        echo `date`: Done
+    >>>
+
+    runtime {
+        continueOnReturnCode: false    
+        docker: "aryeelab/cooler:latest"
+        memory: "16GB"
+        disks: "local-disk " + disk_gb + " SSD"        
+
+    }
+    
+    output {
+        File mcool = "${sample_id}.mcool"
+        File monitoring_log = "monitoring.log"
+    }
 }
