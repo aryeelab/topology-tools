@@ -78,7 +78,7 @@ if (args$chromosome=="inter_chromosomal") {
     
     # Write out CPM normalized sparse interchromosomal matrix
     idx <- bins$chrom[tab$i] != bins$chrom[tab$j] 
-    filename <- paste0("hicpro_matrices/", sample_names[i], "_", args$resolution, "_interchromosomal.cpm.matrix")
+    filename <- file.path(args$out_dir, paste0(sample_names[i], "_", args$resolution, "_interchromosomal.cpm.matrix"))
     message(filename)
     write.table(tab[idx, c("i", "j", "cpm")], file=filename, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
   }
