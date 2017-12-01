@@ -127,7 +127,7 @@ if (args$chromosome=="inter_chromosomal") {
       mat[lower.tri(mat)] <- 0
       triplet_mat <- as(mat, "dgTMatrix")
       triplet_df <- data.frame(bin1_id=triplet_mat@i, bin2_id=triplet_mat@j, count=triplet_mat@x)
-      filename <- paste0("hicpro_matrices/", sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix")
+      filename <- file.path(args$out_dir, paste0(sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix"))
       message(filename)
       write.table(triplet_df, file=filename, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
     }
