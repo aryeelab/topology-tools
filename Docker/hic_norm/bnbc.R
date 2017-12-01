@@ -87,46 +87,50 @@ if (args$chromosome=="inter_chromosomal") {
   chr_idx <- bins$chrom==args$chromosome
   message("Of ", nrow(bins), " bins, ", sum(chr_idx), " correspond to chromosome ", args$chromosome)
   
-  # Create a list of matrices corresponding to the region
-  # specified by 'args$chromosome' for each sample
-  mat_list <- lapply(matrix_files, function(matrix_file) {
-    message ("Extracting chromosome ", args$chromosome, " from ", matrix_file)
-    tab <- read_tsv(matrix_file, 
-                    col_names = c("i", "j", "count"),
-                    col_types = cols_only(i = col_integer(),
-                                          j = col_integer(),
-                                          count = col_double())
-    )
-    # Use 0-based indexing for dgTMatrix
-    mat <- new("dgTMatrix", i = as.integer(tab$i-1), j = as.integer(tab$j-1), x = tab$count, Dim=c(nrow(bins), nrow(bins)))
-    as.matrix(mat[chr_idx, chr_idx])
-  })
-  names(mat_list) <- sample_names
-  
-  # Create ContactGroup
-  sample_data <- DataFrame(rownames=sample_names)
-  bin_gr <- GRanges(seqnames=args$chromosome, IRanges(start=bins$start, end=bins$end)[chr_idx])
-  cg <- ContactGroup(rowData = bin_gr, contacts = mat_list, colData = sample_data)
-  
-  # Within-sample normalization
-  cg_cpm <- logCPM(cg)
-  cg_smooth <- boxSmoother(cg_cpm, h=3, mc.cores=args$cores)
-  
-  # Between-sample normalization
-  cg_bnbc <- suppressWarnings(bnbc(cg_smooth, batch=1, bstart=2, nbands=nrow(cg)-1, threshold=NULL, step=as.numeric(args$resolution), mean.only=TRUE, verbose=FALSE))
-  names(contacts(cg_bnbc)) <- names(contacts(cg))
-  
-  message("\nNormalized output matrix files:")
-  
-  # Write out normalized sparse matrices
-  for (sample in sample_names) {
-    mat <- contacts(cg_bnbc)[[sample]]
-    mat[lower.tri(mat)] <- 0
-    triplet_mat <- as(mat, "dgTMatrix")
-    triplet_df <- data.frame(bin1_id=triplet_mat@i, bin2_id=triplet_mat@j, count=triplet_mat@x)
-    filename <- paste0("hicpro_matrices/", sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix")
-    message(filename)
-    write.table(triplet_df, file=filename, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+  if (nrow(bins)==) {
+    message ("No output files will be created since no bins correspond to this chromosome")
+  } else {
+    # Create a list of matrices corresponding to the region
+    # specified by 'args$chromosome' for each sample
+    mat_list <- lapply(matrix_files, function(matrix_file) {
+      message ("Extracting chromosome ", args$chromosome, " from ", matrix_file)
+      tab <- read_tsv(matrix_file, 
+                      col_names = c("i", "j", "count"),
+                      col_types = cols_only(i = col_integer(),
+                                            j = col_integer(),
+                                            count = col_double())
+      )
+      # Use 0-based indexing for dgTMatrix
+      mat <- new("dgTMatrix", i = as.integer(tab$i-1), j = as.integer(tab$j-1), x = tab$count, Dim=c(nrow(bins), nrow(bins)))
+      as.matrix(mat[chr_idx, chr_idx])
+    })
+    names(mat_list) <- sample_names
+    
+    # Create ContactGroup
+    sample_data <- DataFrame(rownames=sample_names)
+    bin_gr <- GRanges(seqnames=args$chromosome, IRanges(start=bins$start, end=bins$end)[chr_idx])
+    cg <- ContactGroup(rowData = bin_gr, contacts = mat_list, colData = sample_data)
+    
+    # Within-sample normalization
+    cg_cpm <- logCPM(cg)
+    cg_smooth <- boxSmoother(cg_cpm, h=3, mc.cores=args$cores)
+    
+    # Between-sample normalization
+    cg_bnbc <- suppressWarnings(bnbc(cg_smooth, batch=1, bstart=2, nbands=nrow(cg)-1, threshold=NULL, step=as.numeric(args$resolution), mean.only=TRUE, verbose=FALSE))
+    names(contacts(cg_bnbc)) <- names(contacts(cg))
+    
+    message("\nNormalized output matrix files:")
+    
+    # Write out normalized sparse matrices
+    for (sample in sample_names) {
+      mat <- contacts(cg_bnbc)[[sample]]
+      mat[lower.tri(mat)] <- 0
+      triplet_mat <- as(mat, "dgTMatrix")
+      triplet_df <- data.frame(bin1_id=triplet_mat@i, bin2_id=triplet_mat@j, count=triplet_mat@x)
+      filename <- paste0("hicpro_matrices/", sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix")
+      message(filename)
+      write.table(triplet_df, file=filename, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+    }
   }
 }
 
