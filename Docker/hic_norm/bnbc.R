@@ -31,6 +31,12 @@ parser <- add_option(parser, c("-p", "--cores"), type="integer",
 #                             "--chromosome=19",
 #                             "--cores=2"))
 
+# args <- parse_args(parser, args = c("--in_dir=colon_matrix_1000000",
+#                               "--sample_names=BRD3179N,BRD3187N",
+#                               "--resolution=1000000",
+#                               "--chromosome=chr19",
+#                               "--cores=2"))
+
 args <- parse_args(parser)
 
 sample_names <- strsplit(args$sample_names, ",")[[1]]
@@ -79,18 +85,20 @@ if (args$chromosome=="inter_chromosomal") {
 } else {
   # Do bnbc normalization
   chr_idx <- bins$chrom==args$chromosome
-  table(chr_idx)
+  message("Of ", nrow(bins), " bins, ", sum(chr_idx), " correspond to chromosome ", args$chromosome)
   
   # Create a list of matrices corresponding to the region
   # specified by 'args$chromosome' for each sample
   mat_list <- lapply(matrix_files, function(matrix_file) {
+    message ("Extracting chromosome ", args$chromosome, " from ", matrix_file)
     tab <- read_tsv(matrix_file, 
                     col_names = c("i", "j", "count"),
                     col_types = cols_only(i = col_integer(),
                                           j = col_integer(),
                                           count = col_double())
     )
-    mat <- new("dgTMatrix", i = tab$i, j = tab$j, x = tab$count, Dim=c(nrow(bins), nrow(bins)))
+    # Use 0-based indexing for dgTMatrix
+    mat <- new("dgTMatrix", i = as.integer(tab$i-1), j = as.integer(tab$j-1), x = tab$count, Dim=c(nrow(bins), nrow(bins)))
     as.matrix(mat[chr_idx, chr_idx])
   })
   names(mat_list) <- sample_names
