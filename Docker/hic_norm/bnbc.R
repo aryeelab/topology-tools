@@ -87,7 +87,7 @@ if (args$chromosome=="inter_chromosomal") {
   chr_idx <- bins$chrom==args$chromosome
   message("Of ", nrow(bins), " bins, ", sum(chr_idx), " correspond to chromosome ", args$chromosome)
   
-  if (nrow(bins)==) {
+  if (nrow(bins)==0) {
     message ("No output files will be created since no bins correspond to this chromosome")
   } else {
     # Create a list of matrices corresponding to the region
