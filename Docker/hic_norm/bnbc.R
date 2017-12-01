@@ -15,6 +15,8 @@ parser <- add_option(parser, c("-o", "--out_dir"), type="character",
                                             default=".", help="Output folder for normalized matrices")
 parser <- add_option(parser, c("-s", "--sample_names"), type="character",
                                         help="Sample names")
+parser <- add_option(parser, c("--matrix_suffix"), type="character",
+                                        default="_iced.matrix", help="Matrix file name suffix")
 parser <- add_option(parser, c("-r", "--resolution"), type="integer",
                      help="Bin size / resolution in bp")
 parser <- add_option(parser, c("-c", "--chromosome"), type="character",
@@ -34,14 +36,6 @@ args <- parse_args(parser)
 sample_names <- strsplit(args$sample_names, ",")[[1]]
 args
 
-
-#in_dir = "hicpro_matrices"
-#out_dir = "."
-#sample_names <- c("imr90-rep1", "imr90-rep2")
-#resolution <- "10000"
-#chr <- "18"
-#cores <- 2
-
 cpm <- function(x) {
   library_size <- sum(x)
   (x + 0.5) / ((library_size+1)/10^6)
@@ -51,7 +45,7 @@ bin_file <- file.path(args$in_dir, paste0(sample_names[1], "_", args$resolution,
 message("Input bin file:")
 message(bin_file)
 
-matrix_files <- file.path(args$in_dir, paste0(sample_names, "_", args$resolution, ".matrix"))
+matrix_files <- file.path(args$in_dir, paste0(sample_names, "_", args$resolution, args$matrix_suffix))
 message("\nInput matrix files:")
 message(paste(matrix_files, collapse="\n"))
 
@@ -90,7 +84,7 @@ if (args$chromosome=="inter_chromosomal") {
   # Create a list of matrices corresponding to the region
   # specified by 'args$chromosome' for each sample
   mat_list <- lapply(matrix_files, function(matrix_file) {
-    tab <- read_tsv("hicpro_matrices/imr90-rep1_10000.matrix", 
+    tab <- read_tsv(matrix_file, 
                     col_names = c("i", "j", "count"),
                     col_types = cols_only(i = col_integer(),
                                           j = col_integer(),
