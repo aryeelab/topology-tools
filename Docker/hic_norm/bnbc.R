@@ -3,10 +3,10 @@
 
 library(readr)
 library(Matrix)
-library(GenomicRanges)
-library(bnbc)
+suppressPackageStartupMessages(library(GenomicRanges))
+suppressPackageStartupMessages(library(bnbc))
 library(optparse)
-library(foreach)
+suppressPackageStartupMessages(library(foreach))
 
 parser <- OptionParser()
 parser <- add_option(parser, c("-i", "--in_dir"), type="character",
