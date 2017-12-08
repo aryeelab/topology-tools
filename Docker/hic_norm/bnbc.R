@@ -21,6 +21,8 @@ parser <- add_option(parser, c("-r", "--resolution"), type="integer",
                      help="Bin size / resolution in bp")
 parser <- add_option(parser, c("-c", "--chromosome"), type="character",
                      help="Chromosome to normalize. Use 'inter_chromosomal' for inter-chromosomal contacts")
+parser <- add_option(parser, c("--blacklist"), type="character",
+                     default=NULL, help="Regions to exclude from normalization and from output matrices.")
 parser <- add_option(parser, c("-p", "--cores"), type="integer",
                      help="Number of cores to use")
 
@@ -61,6 +63,11 @@ bins <- read_tsv(bin_file,
                                       start = col_integer(),
                                       end = col_double())
 )
+if (!is.null(args$blacklist)) {
+  blacklist_tab <- read.delim(args$blacklist, header=FALSE, stringsAsFactors = FALSE)
+  blacklist_gr <- GRanges(seqnames=blacklist_tab[,1], IRanges(start=blacklist_tab[,2]+1, end=blacklist_tab[,3]))
+  bin_drop_idx <- which(countOverlaps(bin_gr, blacklist_gr) > 0)
+}
 
 
 if (args$chromosome=="inter_chromosomal") {
@@ -74,6 +81,10 @@ if (args$chromosome=="inter_chromosomal") {
                                           j = col_integer(),
                                           count = col_double())
     )
+    if (!is.null(args$blacklist)) {
+      drop_idx <- tab$i %in% bin_drop_idx | tab$j %in% bin_drop_idx
+      tab <- tab[!drop_idx,]
+    }
     tab$cpm <- cpm(tab$count)
     
     # Write out CPM normalized sparse interchromosomal matrix
@@ -100,6 +111,11 @@ if (args$chromosome=="inter_chromosomal") {
                                             j = col_integer(),
                                             count = col_double())
       )
+      if (!is.null(args$blacklist)) {
+        drop_idx <- tab$i %in% bin_drop_idx | tab$j %in% bin_drop_idx
+        tab <- tab[!drop_idx,]
+      }
+      
       # Use 0-based indexing for dgTMatrix
       mat <- new("dgTMatrix", i = as.integer(tab$i-1), j = as.integer(tab$j-1), x = tab$count, Dim=c(nrow(bins), nrow(bins)))
       as.matrix(mat[chr_idx, chr_idx])
@@ -125,7 +141,13 @@ if (args$chromosome=="inter_chromosomal") {
     for (sample in sample_names) {
       mat <- contacts(cg_bnbc)[[sample]]
       mat[lower.tri(mat)] <- 0
-      triplet_mat <- as(mat, "dgTMatrix")
+      
+      # Convert back from chromosome-level to genome-wide coordinates
+      genome_mat <- new("dgTMatrix", Dim=c(nrow(bins), nrow(bins)))
+      genome_mat[chr_idx, chr_idx] <- mat
+      triplet_mat <- as(genome_mat, "dgTMatrix")
+      
+      # Save sparse triplet matrix
       triplet_df <- data.frame(bin1_id=triplet_mat@i, bin2_id=triplet_mat@j, count=triplet_mat@x)
       filename <- file.path(args$out_dir, paste0(sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix"))
       message(filename)
