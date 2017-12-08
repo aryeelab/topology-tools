@@ -149,6 +149,8 @@ if (args$chromosome=="inter_chromosomal") {
       
       # Save sparse triplet matrix
       triplet_df <- data.frame(bin1_id=triplet_mat@i, bin2_id=triplet_mat@j, count=triplet_mat@x)
+      o <- order(triplet_df$bin1_id, triplet_df$bin2_id)
+      triplet_df <- triplet_df[o,]
       filename <- file.path(args$out_dir, paste0(sample, "_", args$resolution, "_", args$chromosome, ".bnbc.matrix"))
       message(filename)
       write.table(triplet_df, file=filename, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
