@@ -1,6 +1,8 @@
 FROM continuumio/miniconda
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
+RUN apt-get update --fix-missing && \
+    apt-get install -y unzip 
+    
 RUN conda install -y -c conda-forge -c bioconda cooler
 
 COPY *.sizes /annotation/
