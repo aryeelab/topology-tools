@@ -37,7 +37,7 @@ bins <- read_tsv(args$bins,
 bin_gr <- GRanges(seqnames=bins$chrom, IRanges(start=bins$start, end=bins$end))
 
 # Read matrix
-message ("Reading input matrix: ", args$bins)
+message ("Reading input matrix: ", args$input_matrix)
 tab <- read_tsv(args$input_matrix, 
                 col_names = c("i", "j", "count"),
                 col_types = cols_only(i = col_integer(),
