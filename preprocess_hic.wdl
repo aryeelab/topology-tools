@@ -21,7 +21,7 @@ workflow preprocess_hic {
     call count_pairs {input: r1_fastq = fastq1.out, disk_gb = 10 + sum_fastq_size.gb * 3}
 
     # Split the fastq files into chunks for parallelization
-    call split_fastq_files  { input: r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, disk_gb = 20 + sum_fastq_size.gb * 3 }
+    call split_fastq_files  { input: sample_id = sample_id, r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, num_pairs = count_pairs.num_pairs, disk_gb = 20 + sum_fastq_size.gb * 3 }
 
     # Run HiC-Pro align on each fastq chunk
     scatter (fastq_pair in split_fastq_files.fastq_pairs) { call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq_pair.left, r2_fastq = fastq_pair.right, genome_size = genome_size, monitoring_script = monitoring_script} }
@@ -35,7 +35,7 @@ workflow preprocess_hic {
     # Compute raw and ICE normalized hicpro contact matrices
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 
-    # Generate balanced cooler file
+    # Generate balanced and unbalanced cooler files
     call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 }
 
@@ -59,14 +59,27 @@ task split_string_into_array {
 }
 
 task split_fastq_files {
+    String sample_id
     Array[File] r1_in
     Array[File] r2_in
     Int num_lines_per_chunk
+    Int num_pairs
     Int disk_gb
     
     command {
-        zcat ${sep=' ' r1_in} | split -d -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - part-
-        zcat ${sep=' ' r2_in} | split -d -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - part-
+
+        # If necessary, reduce the number of lines per chunk to make at least two chunks such that the output is an array. 
+        # This is a workaround necessary for the merge_hic_replicates workflow that 
+        # expects an Array[Array[File]]
+        num_lines_per_chunk=${num_lines_per_chunk}
+        let "total_lines=${num_pairs}*4"
+        if [ "$num_lines_per_chunk" -ge "$total_lines" ]
+        then
+            let "num_lines_per_chunk=$total_lines-4"
+        fi
+        
+        zcat ${sep=' ' r1_in} | split -d --suffix-length=3 -l $num_lines_per_chunk --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat ${sep=' ' r2_in} | split -d --suffix-length=3 -l $num_lines_per_chunk --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
     }
     
      runtime {
@@ -355,8 +368,11 @@ task cooler {
         echo `date`: Starting cooler cload pairix
         cooler cload pairix bins.bed allValidPairs.sorted ${sample_id}.cool
 
-        echo `date`: Starting cooler zoomify
-        cooler zoomify --balance ${sample_id}.cool
+        echo "`date`: Starting cooler zoomify (unbalanced)"
+        cooler zoomify --no-balance --out ${sample_id}.mcool ${sample_id}.cool
+
+        echo "`date`: Starting cooler zoomify (balanced)"
+        cooler zoomify --balance --out ${sample_id}.balanced.mcool ${sample_id}.cool
 
         echo `date`: Done
     >>>
