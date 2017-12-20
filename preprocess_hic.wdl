@@ -67,19 +67,8 @@ task split_fastq_files {
     Int disk_gb
     
     command {
-
-        # If necessary, reduce the number of lines per chunk to make at least two chunks such that the output is an array. 
-        # This is a workaround necessary for the merge_hic_replicates workflow that 
-        # expects an Array[Array[File]]
-        num_lines_per_chunk=${num_lines_per_chunk}
-        let "total_lines=${num_pairs}*4"
-        if [ "$num_lines_per_chunk" -ge "$total_lines" ]
-        then
-            let "num_lines_per_chunk=$total_lines-4"
-        fi
-        
-        zcat ${sep=' ' r1_in} | split -d --suffix-length=3 -l $num_lines_per_chunk --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-        zcat ${sep=' ' r2_in} | split -d --suffix-length=3 -l $num_lines_per_chunk --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
     }
     
      runtime {
