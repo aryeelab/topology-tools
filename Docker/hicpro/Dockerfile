@@ -89,6 +89,9 @@ RUN apt-get install -y default-jre && \
 # Install bc for summing input fastq sizes
 RUN apt-get install -y bc
 
+COPY Mboi_resfrag_hg19.bed.gz /HiC-Pro/annotation
+COPY chrom_hg19.sizes /HiC-Pro/annotation
+
 COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
 COPY chrom_grch38.sizes /HiC-Pro/annotation
 
