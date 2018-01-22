@@ -22,5 +22,12 @@ docker build -t aryeelab/hicpro .
 
 Preprocess HiC:
 ```
-$ cromwell run preprocess_hic.wdl imr90-rep1_hic_small.json 
+./cromwell run preprocess_hic.wdl imr90-rep1_hic_small.json 
+./cromwell run preprocess_hic.wdl imr90-rep2_hic_small.json 
+```
+
+
+# Merging reads across multiple samples
+```
+./cromwell run merge_hic_replicates.wdl merge_hic_replicates_imr90.json 
 ```

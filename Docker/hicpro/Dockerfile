@@ -80,6 +80,12 @@ RUN cd /tmp && \
     rm -fr gawk-3.1.7* && \
     ln -sf /usr/bin/gawk /etc/alternatives/awk
 
+# Install juicer tools
+RUN apt-get install -y default-jre && \
+    mkdir -p /usr/local/juicer && \
+    cd /usr/local/juicer && \
+    wget http://hicfiles.tc4ga.com.s3.amazonaws.com/public/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+
 # Install bc for summing input fastq sizes
 RUN apt-get install -y bc
 

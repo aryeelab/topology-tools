@@ -35,6 +35,9 @@ workflow preprocess_hic {
     # Compute raw and ICE normalized hicpro contact matrices
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 
+    # Generate Juicebox format .hic file
+    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+
     # Generate balanced and unbalanced cooler files
     call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 }
@@ -328,6 +331,32 @@ task hicpro_contact_matrices {
             memory: "16GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
+}
+
+task juicebox_hic {
+    String sample_id
+    File all_valid_pairs
+    String genome_size
+    
+    Int disk_gb
+    File monitoring_script
+    
+    command <<<
+        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g /HiC-Pro/annotation/${genome_size} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+        # Rename output .hic file
+        mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
+    >>>
+    output {
+        File juicebox_hic = "${sample_id}.hic"
+    }
+
+    runtime {
+            continueOnReturnCode: false
+            docker: "aryeelab/hicpro:latest"
+            memory: "16GB"
+            disks: "local-disk " + disk_gb + " SSD"            
+    }
+    
 }
 
 task cooler {
