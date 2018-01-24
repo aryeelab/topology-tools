@@ -3,6 +3,7 @@ workflow preprocess_hic {
     String r1_fastq
     String r2_fastq
     Int num_reads_per_chunk
+    String genome_id
     String genome_size
     String bin_size
     
@@ -36,7 +37,7 @@ workflow preprocess_hic {
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 
     # Generate Juicebox format .hic file
-    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
 
     # Generate balanced and unbalanced cooler files
     call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
@@ -336,13 +337,13 @@ task hicpro_contact_matrices {
 task juicebox_hic {
     String sample_id
     File all_valid_pairs
-    String genome_size
+    String genome_id
     
     Int disk_gb
     File monitoring_script
     
     command <<<
-        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g /HiC-Pro/annotation/${genome_size} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g ${genome_id} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
         # Rename output .hic file
         mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
     >>>
