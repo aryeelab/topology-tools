@@ -1,4 +1,4 @@
-FROM debian:stretch
+FROM ubuntu:16.04
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Install procps (to get free and top)
@@ -43,30 +43,29 @@ RUN apt-get install -y gcc libtbb-dev unzip && \
         ln -s /src/bowtie2-2.3.2/bowtie2* /usr/local/bin
 
 
-# Install R-3.4.0 (See https://cran.r-project.org/bin/linux/debian)
-RUN apt-get install -y gnupg libssl-dev libcurl4-openssl-dev && \
-        apt-key adv --keyserver keys.gnupg.net --recv-key 'E19F5F87128899B192B1A2C2AD5F960A256A04AF' && \
-        echo "deb http://cloud.r-project.org/bin/linux/debian stretch-cran34/" >> /etc/apt/sources.list && \
-        apt-get update && \
-        apt-get install -y --force-yes r-base
+# Install R-3.4.0 (See https://cran.r-project.org/bin/linux/ubuntu)
+COPY E084DAB9.gpg /root/
+RUN apt-get install -y apt-transport-https gnupg libssl-dev libcurl4-openssl-dev libxml2-dev && \
+    echo "deb https://cloud.r-project.org/bin/linux/ubuntu xenial/" >> /etc/apt/sources.list && \
+    apt-key add /root/E084DAB9.gpg && \
+    apt-get update && \
+    apt-get install -y --force-yes r-base
 
 
 #Installing necessary R packages
-RUN Rscript -e "source('http://bioconductor.org/biocLite.R');biocLite('RColorBrewer');biocLite('ggplot2')"
+RUN Rscript -e "source('http://bioconductor.org/biocLite.R'); biocLite(c('ggplot2', 'RColorBrewer', 'remotes', 'optparse')); remotes::install_github('aryeelab/sparsehic')"
 
 # Install HiCPro
 RUN cd /tmp && \
-    wget -O HiC-Pro.tar.gz https://github.com/nservant/HiC-Pro/archive/v2.9.0.tar.gz && \
+    wget -O HiC-Pro.tar.gz https://github.com/nservant/HiC-Pro/archive/v2.10.0.tar.gz && \
     tar zxf HiC-Pro.tar.gz && \
-    cd HiC-Pro-2.9.0  && \ 
-	sed 's/CLUSTER_SYS = /CLUSTER_SYS = LSF/g' config-install.txt  | sed 's/PREFIX =/PREFIX = \//g'  > tmp && \
-	mv tmp config-install.txt && \
-	ln -sf $(which gcc) /usr/local/bin/x86_64-conda_cos6-linux-gnu-gcc && \
+    cd HiC-Pro-2.10.0  && \ 
+	sed -i 's/PREFIX =/PREFIX = \//g' config-install.txt && \
 	make configure && \
     make install && \
     cd .. && \
     rm -fr HiC-Pro* && \
-    ln -s /HiC-Pro_2.9.0 /HiC-Pro
+    ln -s /HiC-Pro_2.10.0 /HiC-Pro
 
 # Install a compatible version of gawk
 RUN cd /tmp && \
@@ -85,6 +84,9 @@ RUN apt-get install -y default-jre && \
     mkdir -p /usr/local/juicer && \
     cd /usr/local/juicer && \
     wget http://hicfiles.tc4ga.com.s3.amazonaws.com/public/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+
+# Install hicpro to sparsehic script
+COPY hicpro_to_sparsehic.R /usr/local/bin/
 
 # Install bc for summing input fastq sizes
 RUN apt-get install -y bc
