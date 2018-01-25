@@ -332,7 +332,7 @@ task hicpro_contact_matrices {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "16GB"
+            memory: "60GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
 }
@@ -433,7 +433,7 @@ task cooler {
     runtime {
         continueOnReturnCode: false    
         docker: "aryeelab/cooler:latest"
-        memory: "16GB"
+        memory: "60GB"
         disks: "local-disk " + disk_gb + " SSD"        
 
     }
