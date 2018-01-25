@@ -37,7 +37,10 @@ workflow preprocess_hic {
     call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
 
     # Generate Juicebox format .hic file
-    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+
+    # Generate sparseHiC format .rds file
+    call sparseHic {input: sample_id = sample_id, matrix_zip = hicpro_contact_matrices.matrix, genome_size = genome_size, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
 
     # Generate balanced and unbalanced cooler files
     call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
@@ -195,7 +198,7 @@ task hicpro_align {
     
             # Run HiC-Pro
             # all_sub : configure bowtie_global bowtie_local bowtie_combine mapping_stat bowtie_pairing mapped_2hic_fragments 
-            make --file //HiC-Pro_2.9.0/scripts/Makefile CONFIG_FILE=/HiC-Pro/config-hicpro.txt CONFIG_SYS=//HiC-Pro_2.9.0/config-system.txt all_sub 2>&1
+            make --file //HiC-Pro/scripts/Makefile CONFIG_FILE=/HiC-Pro/config-hicpro.txt CONFIG_SYS=//HiC-Pro/config-system.txt all_sub 2>&1
             
             #partname=$(echo $(basename imr90-rep1/part-01_R1.fastq.gz) | sed 's/_R1.fastq.gz//')
             tar -cvpf hicpro_out.tar bowtie_results/bwt2 hic_results logs
@@ -337,13 +340,16 @@ task hicpro_contact_matrices {
 task juicebox_hic {
     String sample_id
     File all_valid_pairs
-    String genome_id
+    String genome_size
     
     Int disk_gb
     File monitoring_script
     
     command <<<
-        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g ${genome_id} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+        chmod u+x ${monitoring_script}
+        ${monitoring_script} > monitoring.log &
+
+        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g /HiC-Pro/annotation/${genome_size} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
         # Rename output .hic file
         mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
     >>>
@@ -354,10 +360,38 @@ task juicebox_hic {
     runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "16GB"
+            memory: "60GB"
             disks: "local-disk " + disk_gb + " SSD"            
     }
+}
+
+task sparseHic {
+    String sample_id
+    String genome_size
+    String genome_id
+    File matrix_zip
     
+    Int disk_gb
+    File monitoring_script
+    
+    command <<<
+        chmod u+x ${monitoring_script}           
+        ${monitoring_script} > monitoring.log &
+    
+        unzip ${matrix_zip}
+        Rscript /usr/local/bin/hicpro_to_sparsehic.R --sample_id=${sample_id}  --genome_size=/HiC-Pro/annotation/${genome_size} --genome_id=${genome_id} --cores=2
+
+    >>>
+    output {
+        File rds = "${sample_id}.sparsehic.rds"
+    }
+
+    runtime {
+            continueOnReturnCode: false
+            docker: "aryeelab/hicpro:latest"
+            memory: "60GB"
+            disks: "local-disk " + disk_gb + " SSD"            
+    }
 }
 
 task cooler {

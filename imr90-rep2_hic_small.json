@@ -6,7 +6,7 @@
   "preprocess_hic.num_reads_per_chunk": 150000,
 
   "preprocess_hic.monitoring_script": "Docker/monitor.sh",
-  "preprocess_hic.genome_id": "hg38",
+  "preprocess_hic.genome_id": "grch38",
   "preprocess_hic.genome_size": "chrom_grch38.sizes",
 
   "preprocess_hic.hicpro_align.genome_index_tgz": "test_data/bowtie2_index/hs_small_bt2.tar.gz",
@@ -16,7 +16,7 @@
   "preprocess_hic.hicpro_align.ligation_site": "GATCGATC",
   "preprocess_hic.hicpro_align.bowtie2_cores": "2",
 
-  "preprocess_hic.bin_size": "10000",
+  "preprocess_hic.bin_size": "100000 1000000",
 
   "preprocess_hic.hicpro_align.memory": "16GB",
   "preprocess_hic.hicpro_align.cpu": 2,

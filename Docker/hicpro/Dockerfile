@@ -53,7 +53,7 @@ RUN apt-get install -y apt-transport-https gnupg libssl-dev libcurl4-openssl-dev
 
 
 #Installing necessary R packages
-RUN Rscript -e "source('http://bioconductor.org/biocLite.R'); biocLite(c('ggplot2', 'RColorBrewer', 'remotes', 'optparse')); remotes::install_github('aryeelab/sparsehic')"
+RUN Rscript -e "source('http://bioconductor.org/biocLite.R'); biocLite(c('ggplot2', 'RColorBrewer', 'remotes', 'optparse')); remotes::install_github('aryeelab/sparsehic', ref='874de99')"
 
 # Install HiCPro
 RUN cd /tmp && \
