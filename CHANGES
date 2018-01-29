@@ -12,3 +12,13 @@ Snapshot ID 26
 
 Snapshot ID 29
     - Added juicebox .hic as output
+
+Snapshot ID 31
+    - Specify genome_id annotation for juicebox .hic
+
+Snapshot ID 32
+    - Added sparseHiC .rds as output
+
+Snapshot ID 33
+    - Increased disk size for hicpro_contact_matrices
+
