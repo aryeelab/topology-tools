@@ -332,7 +332,7 @@ task hicpro_contact_matrices {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "60GB"
+            memory: "208GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
 }
