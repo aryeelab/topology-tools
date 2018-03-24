@@ -214,7 +214,7 @@ task hicpro_align {
             docker: "aryeelab/hicpro:latest"
             cpu: cpu
             memory: memory
-            disks: "local-disk 20 SSD"        
+            disks: "local-disk 40 SSD"        
             preemptible: preemptible
         }
 }

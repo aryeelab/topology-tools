@@ -22,3 +22,9 @@ Snapshot ID 32
 Snapshot ID 33
     - Increased disk size for hicpro_contact_matrices
 
+Snapshot ID 34
+    - Increased memory for hicpro_contact_matrices from 60GB to 208GB
+
+Snapshot ID 35
+    - Increased disk size for hicpro_align from 20GB to 40GB
+
