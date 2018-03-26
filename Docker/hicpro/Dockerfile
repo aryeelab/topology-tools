@@ -67,6 +67,9 @@ RUN cd /tmp && \
     rm -fr HiC-Pro* && \
     ln -s /HiC-Pro_2.10.0 /HiC-Pro
 
+# Upgrade iced to v0.4.3 (to fix memory leak bug)
+RUN pip install iced==0.4.3
+
 # Install a compatible version of gawk
 RUN cd /tmp && \
     wget http://ftp.gnu.org/gnu/gawk/gawk-3.1.7.tar.gz && \
@@ -80,7 +83,8 @@ RUN cd /tmp && \
     ln -sf /usr/bin/gawk /etc/alternatives/awk
 
 # Install juicer tools
-RUN apt-get install -y default-jre && \
+RUN apt-get update --fix-missing && \
+    apt-get install -y default-jre && \
     mkdir -p /usr/local/juicer && \
     cd /usr/local/juicer && \
     wget http://hicfiles.tc4ga.com.s3.amazonaws.com/public/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
