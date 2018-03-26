@@ -33,6 +33,7 @@ RUN conda install -c bioconda bx-python
 RUN conda install -c bioconda scipy
 RUN conda install -c bioconda numpy
 RUN conda install -c bioconda pysam
+RUN conda install gxx_linux-64
 
 # Install Bowtie2
 RUN apt-get install -y gcc libtbb-dev unzip && \
