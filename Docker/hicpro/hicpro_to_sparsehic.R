@@ -36,7 +36,7 @@ hic <- import.HiCPro(
   matrix.files=interactionsFile, bed.files=bedFile,
   resolutions=rs, sampleName=args$sample_id,
   manual.chr = gsize$chr, manual.dist = gsize$length,
-  BPPARAM=MulticoreParam(args$cores), n=10, temp=FALSE )
+  BPPARAM=MulticoreParam(args$cores), n=0, temp=FALSE )
 
 hic@metaData <- data.frame(genomeBuild = args$genome_id)
 
