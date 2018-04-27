@@ -97,16 +97,16 @@ COPY hicpro_to_sparsehic.R /usr/local/bin/
 RUN apt-get install -y bc
 
 COPY Mboi_resfrag_hg19.bed.gz /HiC-Pro/annotation
-COPY chrom_hg19.sizes /HiC-Pro/annotation
+COPY hg19.chrom.sizes /HiC-Pro/annotation
 
 COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
-COPY chrom_grch38.sizes /HiC-Pro/annotation
+COPY grch38.chrom.sizes /HiC-Pro/annotation
 
 COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
-COPY chrom_hg38.sizes /HiC-Pro/annotation
+COPY hg38.chrom.sizes /HiC-Pro/annotation
 
 COPY Mboi_resfrag_mm10.bed.gz /HiC-Pro/annotation
-COPY chrom_mm10.sizes /HiC-Pro/annotation
+COPY mm10.chrom.sizes /HiC-Pro/annotation
 
 RUN cd /HiC-Pro/annotation && \
     gunzip *.bed.gz
