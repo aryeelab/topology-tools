@@ -11,16 +11,19 @@ workflow merge_hic_samples {
     call count_pairs { input: replicate_pairs = replicate_pairs }
      
     # Merge the HiC-Pro align results 
-    call hicpro_merge { input: set_id = set_id, hicpro_out_tars = hicpro_out_tars, monitoring_script = monitoring_script, disk_gb = 200}
+    call hicpro_merge { input: set_id = set_id, hicpro_out_tars = hicpro_out_tars, monitoring_script = monitoring_script, disk_gb = 5000}
 
     # Calculate the cis-long range percent metric
     call cis_long_range_percent {input: set_id = set_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_merge.qc_stats}
     
     # Compute raw and ICE normalized hicpro contact matrices
-    call hicpro_contact_matrices {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 200}
+    call hicpro_contact_matrices {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 5000}
 
     # Generate balanced and unbalanced cooler files
-    call cooler {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 200}
+    call cooler {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 5000}
+
+    # Generate Juicebox format .hic file
+    call juicebox_hic {input: sample_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 5000}
     
 }
 
@@ -77,7 +80,7 @@ task hicpro_merge {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
             cpu: 4            
-            disks: "local-disk " + disk_gb + " SSD"        
+            disks: "local-disk " + disk_gb + " HDD"        
         }
         
     output {
@@ -155,8 +158,8 @@ task hicpro_contact_matrices {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "16GB"
-            disks: "local-disk " + disk_gb + " SSD"        
+            memory: "32GB"
+            disks: "local-disk " + disk_gb + " HDD"        
         }
 }
 
@@ -199,13 +202,41 @@ task cooler {
     runtime {
         continueOnReturnCode: false    
         docker: "aryeelab/cooler:latest"
-        memory: "16GB"
-        disks: "local-disk " + disk_gb + " SSD"        
+        memory: "32GB"
+        disks: "local-disk " + disk_gb + " HDD"        
 
     }
     
     output {
         File mcool = "${set_id}.mcool"
         File monitoring_log = "monitoring.log"
+    }
+}
+
+task juicebox_hic {
+    String sample_id
+    File all_valid_pairs
+    String genome_size
+    
+    Int disk_gb
+    File monitoring_script
+    
+    command <<<
+        chmod u+x ${monitoring_script}
+        ${monitoring_script} > monitoring.log &
+
+        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g /HiC-Pro/annotation/${genome_size} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+        # Rename output .hic file
+        mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
+    >>>
+    output {
+        File juicebox_hic = "${sample_id}.hic"
+    }
+
+    runtime {
+            continueOnReturnCode: false
+            docker: "aryeelab/hicpro:latest"
+            memory: "60GB"
+            disks: "local-disk " + disk_gb + " HDD"            
     }
 }
