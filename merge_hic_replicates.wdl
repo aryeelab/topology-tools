@@ -40,7 +40,7 @@ task count_pairs {
     }
     
     output {
-        Int num_pairs = read_int(stdout())
+        String num_pairs = read_string(stdout())
     }   
 }
 
