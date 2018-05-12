@@ -93,7 +93,7 @@ task hicpro_merge {
 
 task cis_long_range_percent {
     String set_id
-    Int num_pairs
+    String num_pairs
     File qc_stats
 
     String dollar = "$"
