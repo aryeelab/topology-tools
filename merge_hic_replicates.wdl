@@ -19,9 +19,6 @@ workflow merge_hic_samples {
     # Compute raw and ICE normalized hicpro contact matrices
     call hicpro_contact_matrices {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 5000}
 
-    # Generate balanced and unbalanced cooler files
-    call cooler {input: set_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 5000}
-
     # Generate Juicebox format .hic file
     call juicebox_hic {input: sample_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 5000}
     
@@ -163,55 +160,6 @@ task hicpro_contact_matrices {
         }
 }
 
-task cooler {
-    String set_id
-    File all_valid_pairs
-    String genome_size
-    String bin_size
-    
-    Int disk_gb  
-    File monitoring_script
-
-    command <<<
-
-        chmod u+x ${monitoring_script}
-        ${monitoring_script} > monitoring.log &
-    
-        echo`date`: Choosing smallest bin size of ${bin_size}
-        RES=$(echo "${bin_size}" | tr " " "\n" | sort | head -n1)
-    
-        echo `date`: Starting makebins
-        cooler makebins /annotation/${genome_size} $RES > bins.bed
-
-        echo `date`: Starting cooler csort
-        cooler csort --nproc 3 --chrom1 2 --pos1 3 --chrom2 5 --pos2 6 \
-             -o allValidPairs.sorted  ${all_valid_pairs} /annotation/${genome_size}
-
-        echo `date`: Starting cooler cload pairix
-        cooler cload pairix bins.bed allValidPairs.sorted ${set_id}.cool
-
-        echo "`date`: Starting cooler zoomify (unbalanced)"
-        cooler zoomify --no-balance --out ${set_id}.mcool ${set_id}.cool
-
-        echo "`date`: Starting cooler zoomify (balanced)"
-        cooler zoomify --balance --out ${set_id}.balanced.mcool ${set_id}.cool
-
-        echo `date`: Done
-    >>>
-
-    runtime {
-        continueOnReturnCode: false    
-        docker: "aryeelab/cooler:latest"
-        memory: "32GB"
-        disks: "local-disk " + disk_gb + " HDD"        
-
-    }
-    
-    output {
-        File mcool = "${set_id}.mcool"
-        File monitoring_log = "monitoring.log"
-    }
-}
 
 task juicebox_hic {
     String sample_id
