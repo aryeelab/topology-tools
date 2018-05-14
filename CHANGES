@@ -28,3 +28,11 @@ Snapshot ID 34
 Snapshot ID 35
     - Increased disk size for hicpro_align from 20GB to 40GB
 
+Snapshot ID 36
+    - Dropped memory and disk size for hicpro_align now that iced memory leak is fixed
+
+
+### merge_hic_replicates
+
+Snapshot ID 10
+    - Changed cis_long_range_percent num_pairs input from Int to String to match count_pairs output (to allow 2+ billion reads)
