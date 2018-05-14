@@ -63,10 +63,15 @@ bins <- read_tsv(bin_file,
                                       start = col_integer(),
                                       end = col_double())
 )
+genome_bin_gr <- GRanges(seqnames=args$chromosome, IRanges(start=bins$start, end=bins$end))
+
 if (!is.null(args$blacklist)) {
   blacklist_tab <- read.delim(args$blacklist, header=FALSE, stringsAsFactors = FALSE)
   blacklist_gr <- GRanges(seqnames=blacklist_tab[,1], IRanges(start=blacklist_tab[,2]+1, end=blacklist_tab[,3]))
-  bin_drop_idx <- which(countOverlaps(bin_gr, blacklist_gr) > 0)
+  bin_drop_idx <- which(countOverlaps(genome_bin_gr, blacklist_gr) > 0)
+  message ("Excluding ", length(bin_drop_idx), " bins out of ", nrow(bins), " because of overlap with the blacklist")
+} else {
+  message("No blacklist regions provided")
 }
 
 
