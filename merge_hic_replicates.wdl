@@ -21,6 +21,9 @@ workflow merge_hic_samples {
 
     # Generate Juicebox format .hic file
     call juicebox_hic {input: sample_id = set_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 5000}
+
+    # Generate sparseHiC format .rds file
+    call sparseHic {input: sample_id = set_id, matrix_zip = hicpro_contact_matrices.matrix, genome_size = genome_size, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 5000}
     
 }
 
@@ -186,5 +189,34 @@ task juicebox_hic {
             docker: "aryeelab/hicpro:latest"
             memory: "60GB"
             disks: "local-disk " + disk_gb + " HDD"            
+    }
+}
+
+task sparseHic {
+    String sample_id
+    String genome_size
+    String genome_id
+    File matrix_zip
+    
+    Int disk_gb
+    File monitoring_script
+    
+    command <<<
+        chmod u+x ${monitoring_script}           
+        ${monitoring_script} > monitoring.log &
+    
+        unzip ${matrix_zip}
+        Rscript /usr/local/bin/hicpro_to_sparsehic.R --sample_id=${sample_id}  --genome_size=/HiC-Pro/annotation/${genome_size} --genome_id=${genome_id} --cores=2
+
+    >>>
+    output {
+        File rds = "${sample_id}.sparsehic.rds"
+    }
+
+    runtime {
+            continueOnReturnCode: false
+            docker: "aryeelab/hicpro:latest"
+            memory: "60GB"
+            disks: "local-disk " + disk_gb + " SSD"            
     }
 }
