@@ -2,6 +2,7 @@ workflow merge_hic_samples {
     String set_id
     Array[File] hicpro_out_tars
     Array[Int] replicate_pairs
+    String genome_id
     String genome_size
     String bin_size    
     
