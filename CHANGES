@@ -31,6 +31,9 @@ Snapshot ID 35
 Snapshot ID 36
     - Dropped memory and disk size for hicpro_align now that iced memory leak is fixed
 
+Snapshot ID 37
+    - Fixed missing space bug (echo`date`) in cooler task
+
 
 ### merge_hic_replicates
 
