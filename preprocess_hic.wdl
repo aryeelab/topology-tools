@@ -408,7 +408,7 @@ task cooler {
         chmod u+x ${monitoring_script}
         ${monitoring_script} > monitoring.log &
     
-        echo`date`: Choosing smallest bin size of ${bin_size}
+        echo `date`: Choosing smallest bin size of ${bin_size}
         RES=$(echo "${bin_size}" | tr " " "\n" | sort | head -n1)
     
         echo `date`: Starting makebins
