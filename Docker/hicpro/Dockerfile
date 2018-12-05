@@ -96,17 +96,22 @@ COPY hicpro_to_sparsehic.R /usr/local/bin/
 # Install bc for summing input fastq sizes
 RUN apt-get install -y bc
 
-COPY Mboi_resfrag_hg19.bed.gz /HiC-Pro/annotation
+# Chromosome sizes
 COPY hg19.chrom.sizes /HiC-Pro/annotation
-
-COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
 COPY grch38.chrom.sizes /HiC-Pro/annotation
-
-COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
 COPY hg38.chrom.sizes /HiC-Pro/annotation
-
-COPY Mboi_resfrag_mm10.bed.gz /HiC-Pro/annotation
 COPY mm10.chrom.sizes /HiC-Pro/annotation
+
+# MboI restriction fragments
+COPY Mboi_resfrag_hg19.bed.gz /HiC-Pro/annotation
+COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
+COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
+COPY Mboi_resfrag_mm10.bed.gz /HiC-Pro/annotation
+
+# HindIII restriction fragments
+COPY Hindiii_resfrag_hg19.bed.gz /HiC-Pro/annotation
+COPY Mboi_resfrag_grch38.bed.gz /HiC-Pro/annotation
+COPY Mboi_resfrag_hg38.bed.gz /HiC-Pro/annotation
 
 RUN cd /HiC-Pro/annotation && \
     gunzip *.bed.gz
