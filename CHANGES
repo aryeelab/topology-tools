@@ -34,6 +34,9 @@ Snapshot ID 36
 Snapshot ID 37
     - Fixed missing space bug (echo`date`) in cooler task
 
+Snapshot ID 38
+    - sparseHic task: increased memory from 60GB to 104GB and use a single core
+
 
 ### merge_hic_replicates
 
