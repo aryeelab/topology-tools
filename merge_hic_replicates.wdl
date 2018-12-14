@@ -207,7 +207,7 @@ task sparseHic {
         ${monitoring_script} > monitoring.log &
     
         unzip ${matrix_zip}
-        Rscript /usr/local/bin/hicpro_to_sparsehic.R --sample_id=${sample_id}  --genome_size=/HiC-Pro/annotation/${genome_size} --genome_id=${genome_id} --cores=2
+        Rscript /usr/local/bin/hicpro_to_sparsehic.R --sample_id=${sample_id}  --genome_size=/HiC-Pro/annotation/${genome_size} --genome_id=${genome_id} --cores=1
 
     >>>
     output {
@@ -217,7 +217,7 @@ task sparseHic {
     runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
-            memory: "60GB"
+            memory: "104GB"
             disks: "local-disk " + disk_gb + " SSD"            
     }
 }
