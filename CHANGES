@@ -42,3 +42,7 @@ Snapshot ID 38
 
 Snapshot ID 10
     - Changed cis_long_range_percent num_pairs input from Int to String to match count_pairs output (to allow 2+ billion reads)
+
+Snapshot ID 14
+    - sparseHic task: increased memory from 60GB to 104GB and use a single core
+
