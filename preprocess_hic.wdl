@@ -103,6 +103,7 @@ task file_size_gb {
     }      
 }
 
+# TODO: Change to a simpler (e.g. debian:stretch + bc) image
 task sum_fastq_size {
     Array[Float] size1
     Array[Float] size2
@@ -111,6 +112,7 @@ task sum_fastq_size {
     }
     runtime {
         docker: "aryeelab/hicpro:latest"
+        disks: "local-disk 20 SSD"
     }
     output {
         Int gb = read_int(stdout())        
