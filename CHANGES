@@ -1,48 +1,54 @@
 ## FireCloud
 ### preprocess_hic
 
-Snapshot ID 24
-    - More accurate fastq file size calculation for many small files
-    
-Snapshot ID 25
-    - Fix to allow calculation of very small fastq sizes (that use scientific notation)    
-    
-Snapshot ID 26
-    - Added cooler file as output
-
-Snapshot ID 29
-    - Added juicebox .hic as output
-
-Snapshot ID 31
-    - Specify genome_id annotation for juicebox .hic
-
-Snapshot ID 32
-    - Added sparseHiC .rds as output
-
-Snapshot ID 33
-    - Increased disk size for hicpro_contact_matrices
-
-Snapshot ID 34
-    - Increased memory for hicpro_contact_matrices from 60GB to 208GB
-
-Snapshot ID 35
-    - Increased disk size for hicpro_align from 20GB to 40GB
-
-Snapshot ID 36
-    - Dropped memory and disk size for hicpro_align now that iced memory leak is fixed
-
-Snapshot ID 37
-    - Fixed missing space bug (echo`date`) in cooler task
+Snapshot ID 39
+    - Fixed hicpro Dockerfile bug resulting in missing Hindiii resfrag files
+    - Increased disk size for sum_fastq_size task. TODO: replace with simpler docker image
+	- Use zcat -f for fastqs to allow compressed and/or uncompressed files
 
 Snapshot ID 38
     - sparseHic task: increased memory from 60GB to 104GB and use a single core
 
+Snapshot ID 37
+    - Fixed missing space bug (echo`date`) in cooler task
+
+Snapshot ID 36
+    - Dropped memory and disk size for hicpro_align now that iced memory leak is fixed
+
+Snapshot ID 35
+    - Increased disk size for hicpro_align from 20GB to 40GB
+
+Snapshot ID 34
+    - Increased memory for hicpro_contact_matrices from 60GB to 208GB
+
+Snapshot ID 33
+    - Increased disk size for hicpro_contact_matrices
+    
+Snapshot ID 32
+    - Added sparseHiC .rds as output
+
+Snapshot ID 31
+    - Specify genome_id annotation for juicebox .hic
+    
+Snapshot ID 29
+    - Added juicebox .hic as output
+
+Snapshot ID 26
+    - Added cooler file as output
+
+Snapshot ID 25
+    - Fix to allow calculation of very small fastq sizes (that use scientific notation)    
+
+Snapshot ID 24
+    - More accurate fastq file size calculation for many small files
+
 
 ### merge_hic_replicates
+
+Snapshot ID 14
+    - sparseHic task: increased memory from 60GB to 104GB and use a single core
 
 Snapshot ID 10
     - Changed cis_long_range_percent num_pairs input from Int to String to match count_pairs output (to allow 2+ billion reads)
 
-Snapshot ID 14
-    - sparseHic task: increased memory from 60GB to 104GB and use a single core
 
