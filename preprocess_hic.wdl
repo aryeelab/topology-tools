@@ -74,8 +74,8 @@ task split_fastq_files {
     Int disk_gb
     
     command {
-        zcat ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-        zcat ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat -f ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat -f ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
     }
     
      runtime {
@@ -125,7 +125,7 @@ task count_pairs {
     String dollar = "$"
         
     command <<<
-        num_lines=`zcat ${sep=' ' r1_fastq} | wc -l`
+        num_lines=`zcat -f ${sep=' ' r1_fastq} | wc -l`
         let "num_pairs=${dollar}num_lines/4"
         echo ${dollar}num_pairs
     >>>
