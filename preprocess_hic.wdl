@@ -112,7 +112,7 @@ task sum_fastq_size {
     }
     runtime {
         docker: "aryeelab/hicpro:latest"
-        disks: "local-disk 20 SSD"
+		bootDiskSizeGb: 20
     }
     output {
         Int gb = read_int(stdout())        

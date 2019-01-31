@@ -1,10 +1,13 @@
 ## FireCloud
 ### preprocess_hic
 
+Snapshot ID 40
+    - Increased boot disk size for sum_fastq_size
+
 Snapshot ID 39
     - Fixed hicpro Dockerfile bug resulting in missing Hindiii resfrag files
     - Increased disk size for sum_fastq_size task. TODO: replace with simpler docker image
-	- Use zcat -f for fastqs to allow compressed and/or uncompressed files
+    - Use zcat -f for fastqs to allow compressed and/or uncompressed files
 
 Snapshot ID 38
     - sparseHic task: increased memory from 60GB to 104GB and use a single core
