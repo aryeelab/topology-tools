@@ -214,6 +214,7 @@ task hicpro_align {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
+			bootDiskSizeGb: 20
             cpu: cpu
             memory: memory
             disks: "local-disk 40 SSD"        
@@ -255,6 +256,7 @@ task hicpro_merge {
             runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
+            bootDiskSizeGb: 20
             cpu: 4            
             disks: "local-disk " + disk_gb + " SSD"        
         }
@@ -284,6 +286,7 @@ task cis_long_range_percent {
 
     runtime {
         docker: "aryeelab/hicpro:latest"
+        bootDiskSizeGb: 20
     }
     
     output {
@@ -334,6 +337,7 @@ task hicpro_contact_matrices {
         runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
+            bootDiskSizeGb: 20
             memory: "15GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
@@ -362,6 +366,7 @@ task juicebox_hic {
     runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
+            bootDiskSizeGb: 20
             memory: "60GB"
             disks: "local-disk " + disk_gb + " SSD"            
     }
@@ -391,6 +396,7 @@ task sparseHic {
     runtime {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
+            bootDiskSizeGb: 20
             cpu: 1
             memory: "104GB"
             disks: "local-disk " + disk_gb + " SSD"            

@@ -1,6 +1,9 @@
 ## FireCloud
 ### preprocess_hic
 
+Snapshot ID 41
+    - Increased boot disk size for tasks that use aryeelab/hicpro
+
 Snapshot ID 40
     - Increased boot disk size for sum_fastq_size
 
