@@ -1,3 +1,9 @@
+version 1.0
+
+struct RuntimeEnvironment {
+    String docker
+}
+
 workflow microc {
 	String pipeline_ver = 'v0.0.0'
 
@@ -36,14 +42,12 @@ workflow microc {
     }
 
     input {
-		String sample_id
-
-    	String fastq_R1
-    	String fastq_R2
-
-        String ref_genome='hg38.fa'
-
-        String docker = 'salvacasani/microc:latest'
+    	String sample_id
+		String fastq_R1
+		String fastq_R2
+		String ref_genome
+		String chroms_path
+		String docker = 'salvacasani/microc:latest'
     }
 
     RuntimeEnvironment runtime_environment = {
@@ -53,21 +57,23 @@ workflow microc {
     call split_string_into_array as fastq1 {input: str = fastq_R1}
     call split_string_into_array as fastq2 {input: str = fastq_R2}
 
-    call merge_fastqs {input: fastq_R1 = fastq1.out, fastq_R2 = fastq2.out}
+    call merge_fastqs {input: fastq_r1 = fastq1.out, fastq_r2 = fastq2.out}
 
     call microc {input: sample_id = sample_id, fastq_R1 = merge_fastqs.fastq_out1, fastq_R2 = merge_fastqs.fastq_out2}
 
     output {
-    	File microc.microc_stats
-    	File microc.mapped_pairs
-    	File microc.bam
+    	File stats = microc.microc_stats
+    	File mapped_pairs = microc.mapped_pairs
+		File bam = microc.bam
     }
 
 }
 
 task split_string_into_array {
-    String str 
-    String arr = "{ARR[@]}"
+	input {
+		String str
+    	String arr = "{ARR[@]}"
+	}
     command <<<
         IFS=',' read -ra ARR <<< "${str}"
         for i in "$${arr}"; do
@@ -85,9 +91,11 @@ task split_string_into_array {
 }
 
 task merge_fastqs {
-	Array[File] fastq_r1
-	Array[File] fastq_r2
-	String sample_id
+	input {
+		Array[File] fastq_r1
+		Array[File] fastq_r2
+		String sample_id
+	}
 
 	command {
 		zcat -f ${sep=' ' fastq_r1} | gzip > '${sample_id}_R1.fastq.gz'
@@ -108,17 +116,21 @@ task merge_fastqs {
 
 
 task microc {
-	String sample_id
-	File fastq_R1
-	File fastq_R2
-	File reference_fa
-	File reference_genome
-	Int bwa_cores = 5
+	input{
+		String sample_id
+		File fastq_R1
+		File fastq_R2
+		File reference_fa
+		File chroms_path
+		Int bwa_cores = 5
+
+		RuntimeEnvironment runtime_environment
+	}
 
     command {
         bwa mem -5SP -T0 -t bwa_cores reference_fa fastq_R1 fastq_R2| \
         pairtools parse --min-mapq 40 --walks-policy 5unique \
-        --max-inter-align-gap 30 --nproc-in bwa_cores --nproc-out bwa_cores --chroms-path reference_genome | \
+        --max-inter-align-gap 30 --nproc-in bwa_cores --nproc-out bwa_cores --chroms-path chroms_path | \
         pairtools sort --nproc bwa_cores|pairtools dedup --nproc-in bwa_cores \
         --nproc-out bwa_cores --mark-dups --output-stats stats.txt|pairtools split --nproc-in bwa_cores \
         --nproc-out bwa_cores --output-pairs mapped.pairs --output-sam -|samtools view -bS -@bwa_cores | \
@@ -130,13 +142,12 @@ task microc {
         bootDiskSizeGb: 20
         cpu: bwa_cores
         disks: "local-disk 40 SSD"
-        preemptible: preemptible
 
     }
     
     output {
-    	File microc_stats = stats.txt
-    	File mapped_pairs = mapped.pairs
+    	File microc_stats = read_lines("stats.txt")
+    	File mapped_pairs = read_lines('mapped.pairs')
     	File bam = '${sample_id}.bam'
     }
 
