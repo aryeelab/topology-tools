@@ -15,6 +15,11 @@ rm test.bed
 gzip test.fa
 cd ..
 
+# BWA index the test genome
+mkdir bwa_index
+cp test.fa.gz bwa_index/
+bwa index bwa_index/test.fa.gz
+tar zcvf test_bwa_index.tgz -C bwa_index .
 
 
 
