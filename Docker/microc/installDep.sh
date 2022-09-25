@@ -5,19 +5,7 @@
 ## used in the examples of this repo
 ## on Ubuntu 18.04 with the lates version as of 04/11/2020
 ################################################################################
-sudo apt-get -y update && sudo apt-get upgrade
 
-## Install GCC make and python and pip
-sudo apt-get install -y build-essential python3 python3-pip
-
-## This will put python3 as the default binairies call by python
-sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-sudo update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
-
-################################################################################
-## Install bedtools
-################################################################################
-sudo apt-get -y install bedtools
 
 ################################################################################
 ## Install deeptools and pairtools
@@ -35,8 +23,8 @@ pip3 install \
     pyBigWig \
     deeptools \
     pandas
-    
-   pip3 install pairtools
+
+conda install -y -c conda-forge -c bioconda pairtools
 
 ################################################################################
 ## Install bwa
