@@ -108,14 +108,18 @@ task microc_align {
 		File reference_index
 		File chroms_path
 		Int bwa_cores = 5
-		String genome = "hg38"
 		String docker
 	}
 
 	command {
-		mkdir /cromwell_root/genome_index
-		tar zxvf ${reference_index} -C /cromwell_root/genome_index
-		bwa mem -5SP -T0 -t ${bwa_cores} /cromwell_root/genome_index/bwa_indexes/${genome} ${fastq_R1} ${fastq_R2}| \
+		mkdir genome_index
+		tar zxvf ${reference_index} -C genome_index
+		# Get genome index fasta name. 
+		BWT=$(find genome_index -name '*.bwt')	
+		GENOME_INDEX_FA="$(dirname $BWT)"/"$(basename $BWT .bwt)"
+		echo "Using bwa index: $GENOME_INDEX_FA"
+		
+		bwa mem -5SP -T0 -t ${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
 		pairtools parse --min-mapq 40 --walks-policy 5unique \
 		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chroms_path} | \
 		pairtools sort --nproc ${bwa_cores}|pairtools dedup --nproc-in ${bwa_cores} \
@@ -133,8 +137,8 @@ task microc_align {
 	}
 
 	output {
-		File microc_stats = read_lines("stats.txt")
-		File mapped_pairs = read_lines("mapped.pairs")
+		File microc_stats = "stats.txt"
+		File mapped_pairs = "mapped.pairs"
 		File bam = "${sample_id}.bam"
 	}
 
