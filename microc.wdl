@@ -119,20 +119,23 @@ task microc_align {
 		GENOME_INDEX_FA="$(dirname $BWT)"/"$(basename $BWT .bwt)"
 		echo "Using bwa index: $GENOME_INDEX_FA"
 		
-		bwa mem -5SP -T0 -t ${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
-		pairtools parse --min-mapq 40 --walks-policy 5unique \
-		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chroms_path} | \
-		pairtools sort --nproc ${bwa_cores}|pairtools dedup --nproc-in ${bwa_cores} \
-		--nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt|pairtools split --nproc-in ${bwa_cores} \
-		--nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
-		samtools sort -@${bwa_cores} -o ${sample_id}.bam
+		bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2} -o aligned.sam
+
+		pairtools parse --min-mapq 40 --walks-policy 5unique --max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chroms_path} aligned.sam > parsed.pairsam
+
+		pairtools sort --nproc ${bwa_cores} parsed.pairsam > sorted.pairsam
+		pairtools dedup --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt --output dedup.pairsam sorted.pairsam
+		pairtools split --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam unsorted.bam dedup.pairsam 
+
+		samtools view -bS -@${bwa_cores} | samtools sort -@${bwa_cores} -o ${sample_id}.bam
 	}
 
 	runtime {
 		docker: docker
-		bootDiskSizeGb: 20
+		bootDiskSizeGb: 40
 		cpu: bwa_cores
-		disks: "local-disk 40 SSD"
+		memory: "20GB"
+		disks: "local-disk 60 SSD"
 
 	}
 
