@@ -1,38 +1,46 @@
-FROM ubuntu:18.04
+FROM ubuntu:22.04
 
-### Set conda environment
-ENV PATH="/root/miniconda3/bin:${PATH}"
-ARG PATH="/root/miniconda3/bin:${PATH}"
+RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
-## install sudo and wget
 RUN apt-get update && \
-      apt-get -y install sudo
+	apt-get -y install  bedtools \
+						build-essential \
+						git \
+                        libbz2-dev  \
+                        libcurl4-openssl-dev \
+                        liblzma-dev \
+                        libssl-dev \
+						python3-deeptools \
+						python3-markupsafe \	
+						python3-pairtools \
+						python3-pandas \
+						python3-pillow \
+						python3-pysam \
+						python3-scipy \
+						python3-tabulate \
+						samtools \
+						wget \
+                        zlib1g-dev
+												
+# Install bwa
+RUN	cd /tmp && \
+	git clone https://github.com/lh3/bwa.git && \
+	cd bwa; make && \
+	cp bwa qualfa2fq.pl xa2multi.pl /usr/local/bin && \
+	rm -fr /tmp/bwa
 
-RUN apt-get install -y wget && rm -rf /var/lib/apt/lists/*
-
-## Install anaconda
-RUN wget \
-    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
-    && mkdir /root/.conda \
-    && bash Miniconda3-latest-Linux-x86_64.sh -b \
-    && rm -f Miniconda3-latest-Linux-x86_64.sh 
-RUN conda --version
-
-## copy the script to install micro-c dependencies
-copy ./installDep.sh .
-RUN chmod +x /installDep.sh
-
-## install system requirements
-RUN sudo apt-get -y update && sudo apt-get -y upgrade
-
-RUN apt-get install -y build-essential python3 python3-pip
-
-RUN sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-RUN sudo update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
-
-RUN sudo apt-get -y install bedtools
-
-RUN sudo apt install -y git
-
-## Install dependencies
-RUN /installDep.sh
+# Install preseq
+RUN     cd /tmp && \
+        wget https://github.com/samtools/htslib/releases/download/1.16/htslib-1.16.tar.bz2 && \
+        tar jxf htslib-1.16.tar.bz2 && \
+        cd htslib-1.16 && \
+        ./configure && make && make install && \
+        cd .. && \
+        rm -fr htslib-1.16 && \
+        wget https://github.com/smithlabcode/preseq/releases/download/v3.1.2/preseq-3.1.2.tar.gz && \
+        tar zxf preseq-3.1.2.tar.gz && \
+        cd preseq-3.1.2 && \
+        ./configure --enable-hts && make && make install && \
+        cd .. && \
+        rm -fr preseq-3.1.2
+    
