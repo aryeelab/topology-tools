@@ -55,6 +55,7 @@ workflow microc {
 		File stats = microc_align.microc_stats
 		File mapped_pairs = microc_align.mapped_pairs
 		File bam = microc_align.bam
+		File bai = microc_align.bai
 	}
 
 }
@@ -142,6 +143,7 @@ task microc_align {
 		File microc_stats = "stats.txt"
 		File mapped_pairs = "mapped.pairs"
 		File bam = "${sample_id}.bam"
+		File bai = "${sample_id}.bam.bai"
 	}
 
 }
