@@ -53,12 +53,15 @@ workflow microc {
 	
 	call juicer_hic {input : sample_id = sample_id, chroms_path = chroms_path, mapped_pairs = microc_align.mapped_pairs}
 
+	call version_info {}
+
 	output {
 		File stats = microc_align.microc_stats
 		File mapped_pairs = microc_align.mapped_pairs
 		File bam = microc_align.bam
 		File bai = microc_align.bai
 		File hic = juicer_hic.hic
+		File pipeline_version = version_info.pipeline_version
 	}
 
 }
@@ -183,4 +186,20 @@ task juicer_hic {
 	
 	}
 
+}
+
+task version_info {	
+	command {
+		cat /VERSION
+	}
+	
+	runtime {
+            continueOnReturnCode: false
+            docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
+            cpu: 1
+            memory: "1GB"
+        }
+	output {
+	    String pipeline_version = read_string(stdout())
+    }
 }
