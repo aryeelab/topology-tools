@@ -36,6 +36,7 @@ jobs:
     # Build and push image to Google Container Registry
     - name: Build
       run: |-
+        git fetch --tags
         GIT_TAG=$(git describe --tags)  
         gcloud builds submit \
             --config Docker/cloudbuild-sha.yaml \
