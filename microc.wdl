@@ -12,7 +12,7 @@ workflow microc {
 		description: 'Process microC data. Inspired in pipeline from: https://micro-c.readthedocs.io/en/latest/index.html'
 		organization: ''
 
-		default_docker: 'salvacasani/microc:latest'
+		default_docker: 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
 
 		parameter_group: {
 			reference_genome: {
@@ -39,7 +39,7 @@ workflow microc {
 		String fastq_R2
 		String reference_bwa_idx
 		String chroms_path
-		String docker = 'salvacasani/microc:latest'
+		String docker = 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
 	}
 
 	call split_string_into_array as fastq1 {input : str = fastq_R1}
@@ -50,11 +50,15 @@ workflow microc {
 	call microc_align {input : sample_id = sample_id, fastq_R1 = merge_fastqs.fastq_out1, fastq_R2 = merge_fastqs.fastq_out2,
 		sample_id = sample_id, reference_index = reference_bwa_idx, chroms_path = chroms_path, docker = docker
 	}
+	
+	call juicer_hic {input : sample_id = sample_id, chroms_path = chroms_path, mapped_pairs = microc_align.mapped_pairs}
 
 	output {
 		File stats = microc_align.microc_stats
 		File mapped_pairs = microc_align.mapped_pairs
 		File bam = microc_align.bam
+		File bai = microc_align.bai
+		File hic = juicer_hic.hic
 	}
 
 }
@@ -89,7 +93,7 @@ task merge_fastqs {
 	}
 
 	runtime {
-		docker: "salvacasani/microc:latest"
+		docker: "ubuntu"
 		cpu: 4
 		memory: "40GB"
 		disks: "local-disk " + 30 + " SSD" 
@@ -145,8 +149,37 @@ task microc_align {
 		File microc_stats = "stats.txt"
 		File mapped_pairs = "mapped.pairs"
 		File bam = "${sample_id}.bam"
+		File bai = "${sample_id}.bam.bai"
 	}
 
 }
 
+task juicer_hic {
+	input {
+		String sample_id
+		File chroms_path
+		File mapped_pairs
+		Int cores = 2
+	}
 
+	command {
+		java -Xmx32000m  -Djava.awt.headless=true -jar /usr/local/bin/juicer_tools_1.22.01.jar pre \
+			--threads ${cores} \
+			${mapped_pairs} \
+			${sample_id}.hic \
+			${chroms_path}
+	}
+
+	runtime {
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:latest"
+		bootDiskSizeGb: 40
+		memory: "40GB"
+		disks: "local-disk 200 SSD"
+	}
+
+	output {
+		File hic = "${sample_id}.hic"
+	
+	}
+
+}

@@ -9,7 +9,15 @@ On Macs cromwell can be installed with
 brew install cromwell
 ```
 
-#### Clone this repository
+
+## Set up Google Cloud Tools for access to docker images:
+
+First download and install the Google Cloud CLI: https://cloud.google.com/sdk/docs/install-sdk
+
+Then authenticate with Google for access to the docker image registry
+
+	gcloud auth login
+	gcloud auth configure-docker us-central1-docker.pkg.dev
 
 ## Running the WDL workflows in Cromwell
 
@@ -56,3 +64,25 @@ A config file specifies cromwell options, including the database connection and 
 ```
 ./cromwell run merge_hic_replicates.wdl merge_hic_replicates_imr90.json 
 ```
+
+
+
+#### Configuring Workload Identity Federation for Github <-> GCP auth
+
+	gcloud iam workload-identity-pools create "github-actions-pool" \
+	  --project="aryeelab" \
+	  --location="global" \
+	  --display-name="Github Actions Pool"
+
+	gcloud iam workload-identity-pools providers create-oidc "github-provider" \
+	  --project="aryeelab" \
+	  --location="global" \
+	  --workload-identity-pool="github-actions-pool" \
+	  --display-name="Github provider" \
+	  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.aud=assertion.aud" \
+	  --issuer-uri="https://token.actions.githubusercontent.com"
+
+	gcloud iam service-accounts add-iam-policy-binding "github-actions@aryeelab.iam.gserviceaccount.com" \
+	  --project="aryeelab" \
+	  --role="roles/iam.workloadIdentityUser" \
+	  --member="principalSet://iam.googleapis.com/projects/303574531351/locations/global/workloadIdentityPools/github-actions-pool/*"
