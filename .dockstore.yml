@@ -1,5 +1,8 @@
 version: 1.2
 workflows:
+   - name: preprocess_microc
+     subclass: WDL
+     primaryDescriptorPath: /microc.wdl 
    - name: preprocess_hic
      subclass: WDL
      primaryDescriptorPath: /preprocess_hic.wdl 
