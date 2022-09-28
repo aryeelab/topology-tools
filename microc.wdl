@@ -168,7 +168,7 @@ task juicer_hic {
 	}
 
 	runtime {
-		docker: "juicer-tools"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:latest"
 		bootDiskSizeGb: 40
 		memory: "40GB"
 		disks: "local-disk 200 SSD"
