@@ -1,0 +1,43 @@
+name: Build Docker images and test pipeline
+
+on:
+  push:
+
+jobs:
+  cloud-build:
+    strategy:
+      matrix:
+        IMAGE_NAME: ['microc']
+
+    name: Google Cloud Build
+    runs-on: ubuntu-latest  
+
+    # Add "id-token" with the intended permissions.
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    # Configure Workload Identity Federation and generate an access token.
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v0'
+      with:
+        workload_identity_provider: 'projects/303574531351/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        service_account: 'github-actions@aryeelab.iam.gserviceaccount.com'
+
+    # Setup gcloud CLI
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v0
+
+    # Build and push image to Google Container Registry
+    - name: Build
+      run: |-
+        GIT_TAG=$(git describe --tags)  
+        gcloud builds submit \
+            --config Docker/cloudbuild-sha.yaml \
+            --region=us-central1 \
+            --substitutions _GIT_TAG=$GIT_TAG,_IMAGE_NAME=${{ matrix.IMAGE_NAME }}
