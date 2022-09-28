@@ -4,9 +4,8 @@
   "microc.fastq_R2": "tests/small-region-capture-micro-c/small_rcmc_r2.fq.gz",
 
   "microc.reference_bwa_idx": "tests/small-region-capture-micro-c/test_bwa_index.tgz",
-  "microc.chroms_path": "tests/small-region-capture-micro-c/test.chrom.sizes",
+  "microc.chrom_sizes": "tests/small-region-capture-micro-c/test.chrom.sizes",
 
-  "microc.docker": "salvacasani/microc",  
   "microc.microc_align.bwa_cores": "2"
 }
 

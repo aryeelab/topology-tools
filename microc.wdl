@@ -2,10 +2,10 @@ version 1.0
 
 
 workflow microc {
-	String pipeline_ver = 'v0.0.0'
-
+	String pipeline_ver = 'dev'
+	String image_id = sub(pipeline_ver, "dev", "latest")
+	
 	meta {
-		version: 'v0.0.0'
 
 		author: ''
 		email: ''
@@ -33,24 +33,42 @@ workflow microc {
 
 	input {
 		String sample_id
-		String fastq_R1
-		String fastq_R2
-		String reference_bwa_idx
-		String chroms_path
+		File fastq_R1
+		File fastq_R2
+		File reference_bwa_idx
+		File chrom_sizes
 	}
 
-	call split_string_into_array as fastq1 {input : str = fastq_R1}
-	call split_string_into_array as fastq2 {input : str = fastq_R2}
+	call split_string_into_array as fastq1 {input: 
+												str = fastq_R1
+											}
+	call split_string_into_array as fastq2 {input: 
+												str = fastq_R2
+											}
 
-	call merge_fastqs {input : fastq_r1 = fastq1.out, fastq_r2 = fastq2.out}
+	call merge_fastqs {input: 
+							fastq_r1 = fastq1.out, 
+							fastq_r2 = fastq2.out
+					   }
 
-	call microc_align {input : sample_id = sample_id, fastq_R1 = merge_fastqs.fastq_out1, fastq_R2 = merge_fastqs.fastq_out2,
-		sample_id = sample_id, reference_index = reference_bwa_idx, chroms_path = chroms_path
-	}
+	call microc_align {input: 
+						image_id = image_id, 
+						sample_id = sample_id, 
+						fastq_R1 = merge_fastqs.fastq_out1, 
+						fastq_R2 = merge_fastqs.fastq_out2,
+						sample_id = sample_id, 
+						reference_index = reference_bwa_idx, 
+						chrom_sizes = chrom_sizes
+					   }
 	
-	call juicer_hic {input : sample_id = sample_id, chroms_path = chroms_path, mapped_pairs = microc_align.mapped_pairs}
+	call juicer_hic {input: 
+						image_id = image_id, 
+						sample_id = sample_id, 
+						chrom_sizes = chrom_sizes, 
+						mapped_pairs = microc_align.mapped_pairs
+					}
 
-	call version_info {}
+	call version_info {input: image_id = image_id}
 
 	output {
 		File stats = microc_align.microc_stats
@@ -108,11 +126,12 @@ task merge_fastqs {
 
 task microc_align {
 	input {
+		String image_id
 		String sample_id
 		File fastq_R1
 		File fastq_R2
 		File reference_index
-		File chroms_path
+		File chrom_sizes
 		Int bwa_cores = 5
 		String memory = "20GB"
 	}
@@ -128,7 +147,7 @@ task microc_align {
 		
 		bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
 		pairtools parse --min-mapq 40 --walks-policy 5unique \
-		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chroms_path} | \
+		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
 		pairtools sort --nproc ${bwa_cores} | pairtools dedup --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt | pairtools split --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
@@ -136,7 +155,7 @@ task microc_align {
 	}
 
 	runtime {
-		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
 		bootDiskSizeGb: 40
 		cpu: bwa_cores
 		memory: memory
@@ -155,8 +174,9 @@ task microc_align {
 
 task juicer_hic {
 	input {
+		String image_id
 		String sample_id
-		File chroms_path
+		File chrom_sizes
 		File mapped_pairs
 		Int cores = 2
 		String memory = "40GB"
@@ -167,11 +187,11 @@ task juicer_hic {
 			--threads ${cores} \
 			${mapped_pairs} \
 			${sample_id}.hic \
-			${chroms_path}
+			${chrom_sizes}
 	}
 
 	runtime {
-		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:latest"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:${image_id}"
 		bootDiskSizeGb: 40
 		memory: memory
 		disks: "local-disk 200 SSD"
@@ -185,13 +205,17 @@ task juicer_hic {
 }
 
 task version_info {	
+	input {
+		String image_id
+	}
+	
 	command {
 		cat /VERSION
 	}
 	
 	runtime {
             continueOnReturnCode: false
-            docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
+            docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
             cpu: 1
             memory: "1GB"
         }
