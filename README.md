@@ -9,9 +9,12 @@ On Macs cromwell can be installed with
 brew install cromwell
 ```
 
-#### Clone this repository
 
-### Authenticate with Google for access to the docker image registry
+## Set up Google Cloud Tools for access to docker images:
+
+First download and install the Google Cloud CLI: https://cloud.google.com/sdk/docs/install-sdk
+
+Then authenticate with Google for access to the docker image registry
 
 	gcloud auth login
 	gcloud auth configure-docker us-central1-docker.pkg.dev
