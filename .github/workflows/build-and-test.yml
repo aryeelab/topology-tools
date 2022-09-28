@@ -9,7 +9,7 @@ jobs:
       matrix:
         IMAGE_NAME: ['microc', 'juicer']
 
-    name: Google Cloud Build
+    name: Build Docker
     runs-on: ubuntu-latest  
 
     # Add "id-token" with the intended permissions.
