@@ -80,6 +80,7 @@ task merge_fastqs {
 	input {
 		Array[File] fastq_r1
 		Array[File] fastq_r2
+		String memory = "20GB"
 	}
 
 	command {
@@ -90,6 +91,7 @@ task merge_fastqs {
 	runtime {
 		docker: "salvacasani/microc:latest"
 		cpu: 4
+		memory: "40GB"
 		disks: "local-disk " + 30 + " SSD" 
 	}
 
@@ -109,6 +111,7 @@ task microc_align {
 		File chroms_path
 		Int bwa_cores = 5
 		String docker
+		String memory = "20GB"
 	}
 
 	command {
@@ -133,7 +136,7 @@ task microc_align {
 		docker: docker
 		bootDiskSizeGb: 40
 		cpu: bwa_cores
-		memory: "20GB"
+		memory: memory
 		disks: "local-disk 60 SSD"
 
 	}
