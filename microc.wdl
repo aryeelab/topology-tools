@@ -50,12 +50,15 @@ workflow microc {
 	call microc_align {input : sample_id = sample_id, fastq_R1 = merge_fastqs.fastq_out1, fastq_R2 = merge_fastqs.fastq_out2,
 		sample_id = sample_id, reference_index = reference_bwa_idx, chroms_path = chroms_path, docker = docker
 	}
+	
+	call juicer_hic {input : sample_id = sample_id, chroms_path = chroms_path, mapped_pairs = microc_align.mapped_pairs}
 
 	output {
 		File stats = microc_align.microc_stats
 		File mapped_pairs = microc_align.mapped_pairs
 		File bam = microc_align.bam
 		File bai = microc_align.bai
+		File hic = juicer_hic.hic
 	}
 
 }
@@ -148,4 +151,32 @@ task microc_align {
 
 }
 
+task juicer_hic {
+	input {
+		String sample_id
+		File chroms_path
+		File mapped_pairs
+		Int cores = 2
+	}
 
+	command {
+		java -Xmx32000m  -Djava.awt.headless=true -jar /usr/local/bin/juicer_tools_1.22.01.jar pre \
+			--threads ${cores} \
+			${mapped_pairs} \
+			${sample_id}.hic \
+			${chroms_path}
+	}
+
+	runtime {
+		docker: "juicer-tools"
+		bootDiskSizeGb: 40
+		memory: "40GB"
+		disks: "local-disk 200 SSD"
+	}
+
+	output {
+		File hic = "${sample_id}.hic"
+	
+	}
+
+}
