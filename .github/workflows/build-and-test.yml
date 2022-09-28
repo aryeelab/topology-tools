@@ -40,6 +40,6 @@ jobs:
       run: |-
         GIT_TAG=$(git describe --tags)  
         gcloud builds submit \
-            --config Docker/cloudbuild-sha.yaml \
+            --config Docker/cloudbuild.yaml \
             --region=us-central1 \
             --substitutions _GIT_TAG=$GIT_TAG,_IMAGE_NAME=${{ matrix.IMAGE_NAME }}
