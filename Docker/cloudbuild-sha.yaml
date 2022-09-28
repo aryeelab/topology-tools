@@ -1,5 +1,4 @@
 steps:
-    logsBucket: 'gs://aryeelab-cloud-build-logs'
     - name: 'gcr.io/cloud-builders/docker:20.10.14'
       args: ['run', '--privileged', 'tonistiigi/binfmt', '--install', '$_DOCKER_BUILDX_PLATFORMS']
       id: 'initialize-qemu'
