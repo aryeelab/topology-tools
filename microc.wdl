@@ -12,7 +12,7 @@ workflow microc {
 		description: 'Process microC data. Inspired in pipeline from: https://micro-c.readthedocs.io/en/latest/index.html'
 		organization: ''
 
-		default_docker: 'salvacasani/microc:latest'
+		default_docker: 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
 
 		parameter_group: {
 			reference_genome: {
@@ -39,7 +39,7 @@ workflow microc {
 		String fastq_R2
 		String reference_bwa_idx
 		String chroms_path
-		String docker = 'salvacasani/microc:latest'
+		String docker = 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
 	}
 
 	call split_string_into_array as fastq1 {input : str = fastq_R1}
@@ -89,7 +89,7 @@ task merge_fastqs {
 	}
 
 	runtime {
-		docker: "salvacasani/microc:latest"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
 		cpu: 4
 		disks: "local-disk " + 30 + " SSD" 
 	}
