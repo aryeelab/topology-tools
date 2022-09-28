@@ -1,4 +1,5 @@
 FROM ubuntu:22.04
+ARG GIT_TAG=__specify_in_build_arg__
 
 RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
@@ -44,3 +45,4 @@ RUN     cd /tmp && \
         cd .. && \
         rm -fr preseq-3.1.2
     
+RUN echo $GIT_TAG > /VERSION
