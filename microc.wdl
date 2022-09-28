@@ -12,8 +12,6 @@ workflow microc {
 		description: 'Process microC data. Inspired in pipeline from: https://micro-c.readthedocs.io/en/latest/index.html'
 		organization: ''
 
-		default_docker: 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
-
 		parameter_group: {
 			reference_genome: {
 				title: 'Reference genome',
@@ -39,7 +37,6 @@ workflow microc {
 		String fastq_R2
 		String reference_bwa_idx
 		String chroms_path
-		String docker = 'us-central1-docker.pkg.dev/aryeelab/docker/microc:latest'
 	}
 
 	call split_string_into_array as fastq1 {input : str = fastq_R1}
@@ -48,7 +45,7 @@ workflow microc {
 	call merge_fastqs {input : fastq_r1 = fastq1.out, fastq_r2 = fastq2.out}
 
 	call microc_align {input : sample_id = sample_id, fastq_R1 = merge_fastqs.fastq_out1, fastq_R2 = merge_fastqs.fastq_out2,
-		sample_id = sample_id, reference_index = reference_bwa_idx, chroms_path = chroms_path, docker = docker
+		sample_id = sample_id, reference_index = reference_bwa_idx, chroms_path = chroms_path
 	}
 	
 	call juicer_hic {input : sample_id = sample_id, chroms_path = chroms_path, mapped_pairs = microc_align.mapped_pairs}
@@ -117,7 +114,6 @@ task microc_align {
 		File reference_index
 		File chroms_path
 		Int bwa_cores = 5
-		String docker
 		String memory = "20GB"
 	}
 
@@ -140,7 +136,7 @@ task microc_align {
 	}
 
 	runtime {
-		docker: docker
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
 		bootDiskSizeGb: 40
 		cpu: bwa_cores
 		memory: memory
