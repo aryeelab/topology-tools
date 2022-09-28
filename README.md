@@ -51,20 +51,30 @@ A config file (e.g. `cromwell.local.conf`) specifies Cromwell options, including
 	-jar /usr/local/Cellar/cromwell/81/libexec/cromwell.jar \
 	run -i tests/small-region-capture-micro-c/small_rcmc.json microc.wdl
 
-Or, (if using cromwell installed by homebrew on a Mac):
+Or, (if using Cromwell installed by homebrew on a Mac):
 
 	export JAVA_OPTS=-Dconfig.file=cromwell.local.conf 
 	cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json microc.wdl
 
 
-## Building the docker image(s)
+## Building or pulling docker images
 
-Docker images are built automatically using Github Actions and GCP Cloud Build. You can also build them locally like this:
+Docker images are built automatically using GitHub Actions and GCP Cloud Build on every push to GitHub. You can pull the latest images from the container registry:
+
+```
+docker pull us-central1-docker.pkg.dev/aryeelab/docker/microc
+docker pull us-central1-docker.pkg.dev/aryeelab/docker/juicer
+```
+
+You can see the status of image builds (completion, success, logs etc.) on the [GitHub Actions](https://github.com/aryeelab/topology-tools/actions) page.
+
+You can alternatively build images locally:
 
 ```
 cd Docker/microc
-docker build -t microc .
+docker build -t us-central1-docker.pkg.dev/aryeelab/docker/microc .
 ```
+
 
 
 ## Configuring Workload Identity Federation for Github <-> GCP auth
