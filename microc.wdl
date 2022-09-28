@@ -92,7 +92,7 @@ task merge_fastqs {
 	}
 
 	runtime {
-		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:latest"
+		docker: "ubuntu"
 		cpu: 4
 		disks: "local-disk " + 30 + " SSD" 
 	}
