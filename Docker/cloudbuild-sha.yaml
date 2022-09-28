@@ -1,0 +1,51 @@
+steps:
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: ['run', '--privileged', 'tonistiigi/binfmt', '--install', '$_DOCKER_BUILDX_PLATFORMS']
+      id: 'initialize-qemu'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: ['buildx', 'create', '--name', 'mybuilder']
+      id: 'create-builder'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: ['buildx', 'use', 'mybuilder']
+      id: 'select-builder'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: ['buildx', 'inspect', '--bootstrap']
+      id: 'show-target-build-platforms'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: 
+        - 'buildx'
+        - 'build'
+        - '--platform'
+        - '$_DOCKER_BUILDX_PLATFORMS'
+        - '--cache-from=type=registry,ref=us-central1-docker.pkg.dev/aryeelab/docker/$_IMAGE_NAME-build-cache'
+        - 'Docker/$_IMAGE_NAME/'
+      id: 'build-multi-architecture-container-image'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: ['buildx', 'stop', 'mybuilder']
+      id: 'stop-builder'
+    - name: 'gcr.io/cloud-builders/docker:20.10.14'
+      args: 
+        - 'buildx'
+        - 'build'
+        - '--platform'
+        - '$_DOCKER_BUILDX_PLATFORMS'
+        - '-t'
+        - 'us-central1-docker.pkg.dev/aryeelab/docker/$_IMAGE_NAME:$_GIT_TAG'
+        - '-t'
+        - 'us-central1-docker.pkg.dev/aryeelab/docker/$_IMAGE_NAME:latest'
+        - '--cache-from=type=registry,ref=us-central1-docker.pkg.dev/aryeelab/docker/$_IMAGE_NAME-build-cache'
+        - '--cache-to=type=registry,ref=us-central1-docker.pkg.dev/aryeelab/docker/$_IMAGE_NAME-build-cache, mode=max'
+        - '--push'
+        - 'Docker/$_IMAGE_NAME/'
+      id: 'build-and-push-multi-architecture-container-image'
+
+options:
+    machineType: 'E2_HIGHCPU_8'
+    env:
+        - 'DOCKER_CLI_EXPERIMENTAL=enabled'
+        
+substitutions:
+    _DOCKER_BUILDX_PLATFORMS: 'linux/amd64,linux/arm64'
+
+timeout: 14400s
+
