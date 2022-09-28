@@ -95,7 +95,7 @@ task merge_fastqs {
 	runtime {
 		docker: "ubuntu"
 		cpu: 4
-		memory: "40GB"
+		memory: memory
 		disks: "local-disk " + 30 + " SSD" 
 	}
 
@@ -133,7 +133,7 @@ task microc_align {
 		pairtools sort --nproc ${bwa_cores} | pairtools dedup --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt | pairtools split --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
-		samtools sort -@${bwa_cores} -o ${sample_id}.bam;samtools index ${sample_id}.bam
+		samtools sort -@${bwa_cores} -o ${sample_id}.bam; samtools index ${sample_id}.bam
 	}
 
 	runtime {
@@ -160,6 +160,7 @@ task juicer_hic {
 		File chroms_path
 		File mapped_pairs
 		Int cores = 2
+		String memory = "40GB"
 	}
 
 	command {
@@ -173,7 +174,7 @@ task juicer_hic {
 	runtime {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:latest"
 		bootDiskSizeGb: 40
-		memory: "40GB"
+		memory: memory
 		disks: "local-disk 200 SSD"
 	}
 
