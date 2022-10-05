@@ -76,7 +76,7 @@ workflow microc {
 		File bam = microc_align.bam
 		File bai = microc_align.bai
 		File hic = juicer_hic.hic
-		File pipeline_version = version_info.pipeline_version
+		String pipeline_version = version_info.pipeline_version
 	}
 
 }
