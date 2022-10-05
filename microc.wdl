@@ -248,7 +248,7 @@ task run_qc {
 	}
 
 	command {
-		python3 ~/qc_stats.py -i ${mapped_pairs} -p ${mapped_stats} -d ${sample_id} 
+		python3 /home/qc_stats.py -i ${mapped_pairs} -p ${mapped_stats} -d ${sample_id} 
 		zip ${sample_id}_qc.zip html_report.html hist.png
 	}
 
