@@ -70,13 +70,21 @@ workflow microc {
 
 	call version_info {input: image_id = image_id}
 
+	call run_qc {input:
+	mapped_pairs = microc_align.mapped_pairs,
+	mapped_stats = microc_align.microc_stats,
+	sample_id = sample_id
+	}
+
 	output {
 		File stats = microc_align.microc_stats
 		File mapped_pairs = microc_align.mapped_pairs
 		File bam = microc_align.bam
 		File bai = microc_align.bai
 		File hic = juicer_hic.hic
-		String pipeline_version = version_info.pipeline_version
+		File pipeline_version = version_info.pipeline_version
+		File qcstats = run_qc.qc_stats_file
+		String perc_20kb = run_qc.dist20kb
 	}
 
 }
@@ -222,4 +230,27 @@ task version_info {
 	output {
 	    String pipeline_version = read_string(stdout())
     }
+}
+
+task run_qc {
+	input {
+		File mapped_pairs
+		File mapped_stats
+		String sample_id
+	}
+
+	command {
+		python3 ~/qc_stats.py -i ${mapped_pairs} -p ${mapped_stats} -d ${sample_id} 
+		zip ${sample_id}_qc.zip html_report.html hist.png
+	}
+
+	runtime {
+		docker: "salvacasani/microc_qc:latest"
+		cpu: 1
+		memory: "10GB"
+	}
+	output {
+		File qc_stats_file = "${sample_id}_qc.zip"
+		String dist20kb = read_string(stdout())
+	}
 }
