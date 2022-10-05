@@ -33,29 +33,35 @@ workflow microc {
 
 	input {
 		String sample_id
-		File fastq_R1
-		File fastq_R2
+		File? fastq_R1
+		File? fastq_R2
 		File reference_bwa_idx
 		File chrom_sizes
+		Boolean merge = true
 	}
 
-	call split_string_into_array as fastq1 {input: 
+	if ( merge ) {
+		call split_string_into_array as fastq1 {input: 
 												str = fastq_R1
 											}
-	call split_string_into_array as fastq2 {input: 
+		call split_string_into_array as fastq2 {input: 
 												str = fastq_R2
 											}
-
-	call merge_fastqs {input: 
+		call merge_fastqs {input: 
 							fastq_r1 = fastq1.out, 
-							fastq_r2 = fastq2.out
-					   }
+							fastq_r2 = fastq2.out}
+	}
+	
+	File? fastq_R1_align = if merge then merge_fastqs.fastq_out1
+					else fastq_R1
+	File? fastq_R2_align = if merge then merge_fastqs.fastq_out2
+					else fastq_R2
 
 	call microc_align {input: 
 						image_id = image_id, 
 						sample_id = sample_id, 
-						fastq_R1 = merge_fastqs.fastq_out1, 
-						fastq_R2 = merge_fastqs.fastq_out2,
+						fastq_R1 = fastq_R1_align, 
+						fastq_R2 = fastq_R2_align,
 						sample_id = sample_id, 
 						reference_index = reference_bwa_idx, 
 						chrom_sizes = chrom_sizes
@@ -91,7 +97,7 @@ workflow microc {
 
 task split_string_into_array {
     input {
-        String str
+        String? str
         String arr = "{ADDR[@]}"        
     }
     command {
@@ -126,8 +132,8 @@ task merge_fastqs {
 	}
 
 	output {
-		File fastq_out1 = "R1.fastq.gz"
-		File fastq_out2 = "R2.fastq.gz"
+		File? fastq_out1 = "R1.fastq.gz"
+		File? fastq_out2 = "R2.fastq.gz"
 	}
 }
 
@@ -136,12 +142,13 @@ task microc_align {
 	input {
 		String image_id
 		String sample_id
-		File fastq_R1
-		File fastq_R2
+		File? fastq_R1
+		File? fastq_R2
 		File reference_index
 		File chrom_sizes
 		Int bwa_cores = 5
 		String memory = "20GB"
+		String disk = "500"
 	}
 
 	command {
@@ -167,7 +174,7 @@ task microc_align {
 		bootDiskSizeGb: 40
 		cpu: bwa_cores
 		memory: memory
-		disks: "local-disk 60 SSD"
+		disks: "local-disk " + disk + " SSD"
 
 	}
 
@@ -188,6 +195,7 @@ task juicer_hic {
 		File mapped_pairs
 		Int cores = 2
 		String memory = "40GB"
+		String disk = "200"
 	}
 
 	command {
@@ -202,7 +210,7 @@ task juicer_hic {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:${image_id}"
 		bootDiskSizeGb: 40
 		memory: memory
-		disks: "local-disk 200 SSD"
+		disks: "local-disk " + disk + " SSD"
 	}
 
 	output {
