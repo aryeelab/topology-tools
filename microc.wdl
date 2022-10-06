@@ -77,9 +77,10 @@ workflow microc {
 	call version_info {input: image_id = image_id}
 
 	call run_qc {input:
-	mapped_pairs = microc_align.mapped_pairs,
-	mapped_stats = microc_align.microc_stats,
-	sample_id = sample_id
+		image_id = image_id, 
+		mapped_pairs = microc_align.mapped_pairs,
+		mapped_stats = microc_align.microc_stats,
+		sample_id = sample_id
 	}
 
 	output {
@@ -242,6 +243,7 @@ task version_info {
 
 task run_qc {
 	input {
+		String image_id
 		File mapped_pairs
 		File mapped_stats
 		String sample_id
