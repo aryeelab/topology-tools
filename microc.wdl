@@ -89,7 +89,7 @@ workflow microc {
 		File bam = microc_align.bam
 		File bai = microc_align.bai
 		File hic = juicer_hic.hic
-		File pipeline_version = version_info.pipeline_version
+		String pipeline_version = version_info.pipeline_version
 		File qcstats = run_qc.qc_stats_file
 		String perc_20kb = run_qc.dist20kb
 	}
