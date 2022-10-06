@@ -7,7 +7,7 @@ jobs:
   cloud-build:
     strategy:
       matrix:
-        IMAGE_NAME: ['microc', 'juicer']
+        IMAGE_NAME: ['microc', 'microc_qc', 'juicer']
 
     name: Build Docker
     runs-on: ubuntu-latest  
