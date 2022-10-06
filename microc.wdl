@@ -253,7 +253,7 @@ task run_qc {
 	}
 
 	runtime {
-		docker: "salvacasani/microc_qc:latest"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc_qc:${image_id}"
 		cpu: 1
 		memory: "10GB"
 	}
