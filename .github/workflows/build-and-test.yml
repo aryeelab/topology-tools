@@ -4,7 +4,8 @@ on:
   push:
 
 jobs:
-  cloud-build:
+
+  build-docker:
     strategy:
       matrix:
         IMAGE_NAME: ['microc', 'microc_qc', 'juicer']
@@ -43,3 +44,76 @@ jobs:
             --config Docker/cloudbuild.yaml \
             --region=us-central1 \
             --substitutions _GIT_TAG=$GIT_TAG,_IMAGE_NAME=${{ matrix.IMAGE_NAME }}
+  
+  test-microc-pipeline:
+    name: Test Micro-C Pipeline
+    needs: build-docker
+    runs-on: ubuntu-latest
+    
+    # Add "id-token" with the intended permissions.
+    permissions:
+      contents: 'read'
+      id-token: 'write'    
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+          fetch-depth: 0
+          
+    - name: Change docker version from latest to current git commit tag (if version is dev)
+      run: |
+        GIT_TAG=$(git describe --tags)
+        echo Replacing 'dev' with $GIT_TAG if necessary
+        sed -i "s/String pipeline_ver = 'dev'/String pipeline_ver = '$GIT_TAG'/" microc.wdl
+        echo Confirming version in microc.wdl:
+        cat microc.wdl | grep "String pipeline_ver ="
+
+    - name: Install pytest-worfklow and Cromwell dependencies
+      run: |
+        pip install pytest-workflow
+        wget -nv https://github.com/broadinstitute/cromwell/releases/download/80/cromwell-80.jar
+        echo '#!/bin/bash' > /usr/local/bin/cromwell
+        echo exec \"${JAVA_HOME}/bin/java\" $JAVA_OPTS -jar \"${PWD}/cromwell-80.jar\" '"$@"' >> /usr/local/bin/cromwell
+        cat /usr/local/bin/cromwell
+        chmod +x /usr/local/bin/cromwell
+
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v0'
+      with:
+        token_format: 'access_token'
+        workload_identity_provider: 'projects/303574531351/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        service_account: 'github-actions@aryeelab.iam.gserviceaccount.com'
+
+    - id: 'docker-login'
+      name: 'Docker login to Artifact Registry'
+      uses: 'docker/login-action@v1'
+      with:
+        registry: 'us-central1-docker.pkg.dev' 
+        username: 'oauth2accesstoken'
+        password: '${{ steps.auth.outputs.access_token }}'
+ 
+    - name: Run tests
+      run: |
+        pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow
+
+    - name: Run pipeline to get full cromwell logs if pytest fails
+      if: ${{ failure() }}
+      run: |
+        cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json microc.wdl
+
+    - name: Upload cromwell logs to GCP bucket 
+      if: ${{ failure() }}
+      run: |
+        GIT_TAG=$(git describe --tags)
+        LOG_TGZ=$(date +"%Y-%m-%d")-cromwell-executions-${GIT_TAG}.tgz
+        tar cfv $LOG_TGZ /home/runner/work/topology-tools/topology-tools/cromwell-executions
+        gsutil cp $LOG_TGZ gs://aryeelab-github-actions-logs/
+
+    - name: Show pytest logs
+      run: |           
+        echo "STDOUT:"
+        cat /tmp/pytest_workflow/*/log.out
+        echo "STDERR:"
+        cat /tmp/pytest_workflow/*/log.err    
