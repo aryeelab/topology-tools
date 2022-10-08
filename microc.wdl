@@ -76,7 +76,8 @@ workflow microc {
 
 	call version_info {input: image_id = image_id}
 
-	call run_qc {input:
+	call run_qc {input: 
+						image_id = image_id,
 	mapped_pairs = microc_align.mapped_pairs,
 	mapped_stats = microc_align.microc_stats,
 	sample_id = sample_id
@@ -245,6 +246,9 @@ task run_qc {
 		File mapped_pairs
 		File mapped_stats
 		String sample_id
+		String memory = "20GB"
+		String disk = "50"
+		String image_id
 	}
 
 	command {
@@ -255,7 +259,8 @@ task run_qc {
 	runtime {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc_qc:${image_id}"
 		cpu: 1
-		memory: "10GB"
+		memory: memory
+		disks: "local-disk " + disk + " SSD"
 	}
 	output {
 		File qc_stats_file = "${sample_id}_qc.zip"
