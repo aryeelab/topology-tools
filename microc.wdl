@@ -35,7 +35,8 @@ workflow microc {
 		String sample_id
 		File? fastq_R1
 		File? fastq_R2
-		File reference_bwa_idx
+		File? reference_bwa_idx
+		String? reference_bwa_idx_prefix
 		File chrom_sizes
 		Boolean merge = true
 	}
@@ -64,6 +65,7 @@ workflow microc {
 						fastq_R2 = fastq_R2_align,
 						sample_id = sample_id, 
 						reference_index = reference_bwa_idx, 
+						reference_index_prefix = reference_bwa_idx_prefix, 
 						chrom_sizes = chrom_sizes
 					   }
 	
@@ -145,7 +147,8 @@ task microc_align {
 		String sample_id
 		File? fastq_R1
 		File? fastq_R2
-		File reference_index
+		File? reference_index
+		String? reference_index_prefix
 		File chrom_sizes
 		Int bwa_cores = 5
 		String memory = "20GB"
@@ -153,13 +156,37 @@ task microc_align {
 	}
 
 	command {
-		mkdir genome_index
-		tar zxvf ${reference_index} -C genome_index
-		# Get genome index fasta name. 
-		BWT=$(find genome_index -name '*.bwt')	
+		
+		# Check if bwa index is provided as a tar.gz file ("reference_index")
+		#  or a URI prefix ("reference_index_prefix", e.g. gs://gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.64)
+		if [ ! -z "${reference_index}" ] && [ ! -z "${reference_index_prefix}" ]
+		then
+			echo "ERROR: Both reference_index and reference_index_prefix provided. Please provide only one."
+			exit
+		fi
+		if [ ! -z "${reference_index}" ]
+		then
+			echo "Using provided reference .tar.gz: ${reference_index}"
+			mkdir genome_index
+			tar zxvf ${reference_index} -C genome_index
+		else
+			echo "Using reference_index_prefix: ${reference_index_prefix}"
+			mkdir genome_index
+			cd genome_index
+			gsutil cp ${reference_index_prefix}.amb .
+			gsutil cp ${reference_index_prefix}.ann .
+			gsutil cp ${reference_index_prefix}.bwt .
+			gsutil cp ${reference_index_prefix}.pac .
+			gsutil cp ${reference_index_prefix}.sa .
+			echo "Downloaded bwa index files:"
+			ls -lh
+			cd ..
+		fi
+		
+		# Get genome index name
+		BWT=$(find genome_index -name '*.bwt')
 		GENOME_INDEX_FA="$(dirname $BWT)"/"$(basename $BWT .bwt)"
 		echo "Using bwa index: $GENOME_INDEX_FA"
-		
 		
 		bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
 		pairtools parse --min-mapq 40 --walks-policy 5unique \
