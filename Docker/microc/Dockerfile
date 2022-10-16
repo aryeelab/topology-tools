@@ -5,6 +5,7 @@ RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 RUN apt-get update && \
     apt-get -y install  bedtools \
                         build-essential \
+                        curl \
                         git \
                         libbz2-dev  \
                         libcurl4-openssl-dev \
@@ -57,6 +58,11 @@ RUN cd /tmp && \
     ls && \
     pip3 install . && \
     pip3 install . 
+
+# Install Google Cloud SDK (primarily for gsutil)
+RUN curl -sSL https://sdk.cloud.google.com  | bash && \
+	ln -s /root/google-cloud-sdk/bin/gcloud /usr/local/bin/ && \
+	ln -s /root/google-cloud-sdk/bin/gsutil /usr/local/bin/
 
 ARG GIT_TAG=__specify_in_build_arg__    
 RUN echo $GIT_TAG > /VERSION
