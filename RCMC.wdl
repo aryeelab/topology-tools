@@ -38,7 +38,7 @@ workflow RCMC {
 		File captured_pairs = filter_mapped_pairs_region.captured_pairs
 		String captured_perc = filter_mapped_pairs_region.perc
 		File hic = juicer_hic.hic
-		File hic_res = hic_resolution.hic
+		File hic_res = juicer_hic_res.hic
 	}
 
 }
