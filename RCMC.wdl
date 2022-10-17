@@ -10,6 +10,7 @@ workflow RCMC {
 		File chrom_sizes
 		String region
 		String sample_id
+		String hic_resolution
 	}
 
 	call filter_mapped_pairs_region { input:
@@ -25,10 +26,19 @@ workflow RCMC {
 						mapped_pairs = filter_mapped_pairs_region.captured_pairs
 					}
 
+	call juicer_hic_res {input: 
+						image_id = image_id, 
+						sample_id = sample_id, 
+						chrom_sizes = chrom_sizes, 
+						mapped_pairs = filter_mapped_pairs_region.captured_pairs,
+						hic_resolution = hic_resolution
+					}
+
 	output {
 		File captured_pairs = filter_mapped_pairs_region.captured_pairs
 		String captured_perc = filter_mapped_pairs_region.perc
 		File hic = juicer_hic.hic
+		File hic_res = hic_resolution.hic
 	}
 
 }
@@ -89,4 +99,40 @@ task juicer_hic {
 	}
 
 }
+
+
+task juicer_hic_res {
+	input {
+		String image_id
+		String sample_id
+		File chrom_sizes
+		File mapped_pairs
+		Int cores = 2
+		String memory = "40GB"
+		String disk = "200"
+		String hic_resolution
+	}
+
+	command {
+		java -Xmx32000m  -Djava.awt.headless=true -jar /usr/local/bin/juicer_tools_1.22.01.jar pre \
+			--threads ${cores} -r ${hic_resolution}\
+			${mapped_pairs} \
+			${sample_id}_${hic_resolution}bp_captured.hic \
+			${chrom_sizes}
+	}
+
+	runtime {
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:${image_id}"
+		bootDiskSizeGb: 40
+		memory: memory
+		disks: "local-disk " + disk + " SSD"
+	}
+
+	output {
+		File hic = "${sample_id}_${hic_resolution}bp_captured.hic"
+	
+	}
+
+}
+
 
