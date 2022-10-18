@@ -274,6 +274,9 @@ task run_qc {
 		File mapped_pairs
 		File mapped_stats
 		String sample_id
+		String memory = "20GB"
+		String disk = "50"
+		String image_id
 	}
 
 	command {
@@ -284,7 +287,8 @@ task run_qc {
 	runtime {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc_qc:${image_id}"
 		cpu: 1
-		memory: "10GB"
+		memory: memory
+		disks: "local-disk " + disk + " SSD"
 	}
 	output {
 		File qc_stats_file = "${sample_id}_qc.zip"
