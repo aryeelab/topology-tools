@@ -8,7 +8,7 @@ jobs:
   build-docker:
     strategy:
       matrix:
-        IMAGE_NAME: ['microc', 'microc_qc', 'juicer']
+        IMAGE_NAME: ['juicer', 'microc', 'microc_qc', 'rcmc']
 
     name: Build Docker
     runs-on: ubuntu-latest  
