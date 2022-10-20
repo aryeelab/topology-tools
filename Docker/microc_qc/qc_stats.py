@@ -168,5 +168,7 @@ if __name__ == "__main__":
 	qc_histogram(args.i)
 	create_html(args.d, qc_table)
 
+	print(total_reads_str)
+	print(cis_gt20kb)
 	print(percent_cis_gt20kb)
 

@@ -93,7 +93,9 @@ workflow microc {
 		File hic = juicer_hic.hic
 		String pipeline_version = version_info.pipeline_version
 		File qcstats = run_qc.qc_stats_file
-		String perc_20kb = run_qc.dist20kb
+		String total_reads = run_qc.total_reads
+		String reads_20kb = run_qc.dist20kb_reads
+		String perc_20kb = run_qc.dist20kb_percent		
 	}
 
 }
@@ -293,6 +295,9 @@ task run_qc {
 	}
 	output {
 		File qc_stats_file = "${sample_id}_qc.zip"
-		String dist20kb = read_string(stdout())
+		Array[String] qc_stats = read_lines(stdout())
+		String total_reads = qc_stats[0]
+		String dist20kb_reads = qc_stats[1]
+		String dist20kb_percent = qc_stats[2]
 	}
 }
