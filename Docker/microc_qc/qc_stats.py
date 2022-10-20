@@ -87,7 +87,7 @@ def qc_stats(stats_file):
 	cis_gt20kb = format(cis_gt20kb,",d")
 	table.append(["No-Dup Cis Read Pairs >= 20kb", cis_gt20kb, f"{percent_cis_gt20kb}%"])
 
-	return table, percent_cis_gt20kb
+	return table, total_reads_str, cis_gt20kb, percent_cis_gt20kb
 
 
 def qc_histogram(pairfile):
@@ -164,7 +164,7 @@ def create_html(sample_name, qc_table):
 
 if __name__ == "__main__":
 
-	qc_table, percent_cis_gt20kb = qc_stats(args.p)
+	qc_table, total_reads_str, cis_gt20kb, percent_cis_gt20kb = qc_stats(args.p)
 	qc_histogram(args.i)
 	create_html(args.d, qc_table)
 
