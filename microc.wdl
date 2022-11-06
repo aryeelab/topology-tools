@@ -133,7 +133,7 @@ task merge_fastqs {
 		docker: "ubuntu"
 		cpu: 4
 		memory: memory
-		disks: "local-disk " + 30 + " SSD" 
+		disks: "local-disk " + 300 + " SSD" 
 	}
 
 	output {
