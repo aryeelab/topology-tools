@@ -125,8 +125,8 @@ task merge_fastqs {
 	}
 
 	command {
-		zcat -f ~{sep=' ' fastq_r1} | gzip > R1.fastq.gz
-		zcat -f ~{sep=' ' fastq_r2} | gzip > R2.fastq.gz
+		cat ~{sep=' ' fastq_r1} > R1.fastq.gz
+		cat ~{sep=' ' fastq_r2} > R2.fastq.gz
 	}
 
 	runtime {
