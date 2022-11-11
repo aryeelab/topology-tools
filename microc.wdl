@@ -76,6 +76,13 @@ workflow microc {
 						mapped_pairs = microc_align.mapped_pairs
 					}
 
+	call cooler {input: 
+						image_id = image_id, 
+						sample_id = sample_id, 
+						chrom_sizes = chrom_sizes, 
+						mapped_pairs = microc_align.mapped_pairs
+					}
+
 	call version_info {input: image_id = image_id}
 
 	call run_qc {input:
@@ -91,6 +98,8 @@ workflow microc {
 		File bam = microc_align.bam
 		File bai = microc_align.bai
 		File hic = juicer_hic.hic
+		File raw_mcool = cooler.raw_mcool
+		File balanced_mcool = cooler.balanced_mcool
 		String pipeline_version = version_info.pipeline_version
 		File qcstats = run_qc.qc_stats_file
 		String total_reads = run_qc.total_reads
@@ -249,6 +258,35 @@ task juicer_hic {
 	
 	}
 
+}
+
+task cooler {
+	input {
+		String image_id
+		String sample_id
+		File chrom_sizes
+		File mapped_pairs
+		Int resolution = "10000"
+		String disk = "200"
+	}
+
+	command {
+		cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 ${chrom_sizes}:${resolution} ${mapped_pairs} ${sample_id}.cool
+		cooler zoomify --resolutions ${resolution}N -o ${sample_id}.raw.mcool -p 4 ${sample_id}.cool
+		cooler zoomify --resolutions ${resolution}N -o ${sample_id}.balanced.mcool -p 4 --balance --balance-args '--nproc 4' ${sample_id}.cool
+	}
+
+	runtime {
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/cooler:${image_id}"
+		cpu: 4
+		memory: "8GB"
+		disks: "local-disk " + disk + " SSD"
+	}
+
+	output {
+		File raw_mcool = "${sample_id}.raw.mcool"	
+		File balanced_mcool = "${sample_id}.balanced.mcool"			
+	}
 }
 
 task version_info {	

@@ -6,6 +6,8 @@
   "microc.reference_bwa_idx": "tests/small-region-capture-micro-c/test_bwa_index.tgz",
   "microc.chrom_sizes": "tests/small-region-capture-micro-c/test.chrom.sizes",
 
+  "microc.cooler.resolution": "1000",
+
   "microc.microc_align.bwa_cores": "2"
 }
 
