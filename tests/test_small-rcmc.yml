@@ -2,6 +2,8 @@
   command: cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json -o tests/options.json microc.wdl
   files:
     - path: test-output/mapped.pairs
+    - path: test-output/small-rcmc.hic
+      md5sum: 95c43dc49e7a38f6b00627ae85da09db
     - path: test-output/stats.txt
       md5sum: 8acd9287e5230423e2aae181c7e57bd1
   stdout:
