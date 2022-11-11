@@ -1,9 +1,5 @@
-FROM continuumio/miniconda
+FROM ubuntu:22.04
 
-# Install procps (to get free and top)
-RUN apt-get update --fix-missing && \
-    apt-get install -y procps
-
-RUN conda install -y -c conda-forge -c bioconda numpy=1.13.3 cooler=0.7.6
-
-COPY *.sizes /annotation/
+RUN apt-get update && \
+	apt-get -y install python3 python3-pip cython3 && \
+	pip3 install cooler==0.8.11
