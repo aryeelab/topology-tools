@@ -3,6 +3,9 @@ workflows:
    - name: preprocess_microc
      subclass: WDL
      primaryDescriptorPath: /microc.wdl 
+   - name: preprocess_rcmc
+     subclass: WDL
+     primaryDescriptorPath: /RCMC.wdl 
    - name: preprocess_hic
      subclass: WDL
      primaryDescriptorPath: /preprocess_hic.wdl 
