@@ -34,11 +34,21 @@ workflow RCMC {
 						hic_resolution = hic_resolution
 					}
 
+	call cooler_res {input: 
+						image_id = image_id, 
+						sample_id = sample_id, 
+						chrom_sizes = chrom_sizes, 
+						mapped_pairs = filter_mapped_pairs_region.captured_pairs,
+						hic_resolution = hic_resolution
+					}
+
 	output {
 		File captured_pairs = filter_mapped_pairs_region.captured_pairs
 		String captured_perc = filter_mapped_pairs_region.perc
 		File hic = juicer_hic.hic
 		File hic_res = juicer_hic_res.hic
+		File cooler_raw_res = cooler_res.raw_mcool
+		File cooler_balanced_res = cooler_res.balanced_mcool		
 	}
 
 }
@@ -135,4 +145,32 @@ task juicer_hic_res {
 
 }
 
+task cooler_res {
+	input {
+		String image_id
+		String sample_id
+		File chrom_sizes
+		File mapped_pairs
+		Int hic_resolution = "500"
+		String disk = "200"
+	}
+
+	command {
+		cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 ${chrom_sizes}:${hic_resolution} ${mapped_pairs} ${sample_id}.cool
+		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.raw.mcool -p 4 ${sample_id}.cool
+		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.balanced.mcool -p 4 --balance --balance-args '--nproc 4' ${sample_id}.cool
+	}
+
+	runtime {
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/cooler:${image_id}"
+		cpu: 4
+		memory: "8GB"
+		disks: "local-disk " + disk + " SSD"
+	}
+
+	output {
+		File raw_mcool = "${sample_id}.raw.mcool"	
+		File balanced_mcool = "${sample_id}.balanced.mcool"			
+	}
+}
 
