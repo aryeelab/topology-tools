@@ -157,8 +157,8 @@ task cooler_res {
 
 	command {
 		cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 ${chrom_sizes}:${hic_resolution} ${mapped_pairs} ${sample_id}.cool
-		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.raw.mcool -p 4 ${sample_id}.cool
-		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.balanced.mcool -p 4 --balance --balance-args '--nproc 4' ${sample_id}.cool
+		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.captured.raw.mcool -p 4 ${sample_id}.cool
+		cooler zoomify --resolutions ${hic_resolution}N -o ${sample_id}.captured.balanced.mcool -p 4 --balance --balance-args '--nproc 4' ${sample_id}.cool
 	}
 
 	runtime {
@@ -169,8 +169,8 @@ task cooler_res {
 	}
 
 	output {
-		File raw_mcool = "${sample_id}.raw.mcool"	
-		File balanced_mcool = "${sample_id}.balanced.mcool"			
+		File raw_mcool = "${sample_id}.captured.raw.mcool"	
+		File balanced_mcool = "${sample_id}.captured.balanced.mcool"			
 	}
 }
 
