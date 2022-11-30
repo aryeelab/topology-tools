@@ -8,6 +8,8 @@
 
   "microc.cooler.resolution": "1000",
 
-  "microc.microc_align.bwa_cores": "2"
+  "microc.microc_align.bwa_cores": "2",
+  
+  "microc.resource_monitor_script": "tests/monitor_v3.sh"
 }
 
