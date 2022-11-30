@@ -39,6 +39,7 @@ workflow microc {
 		String? reference_bwa_idx_prefix
 		File chrom_sizes
 		Boolean merge = true
+		File resource_monitor_script
 	}
 
 	if ( merge ) {
@@ -66,7 +67,8 @@ workflow microc {
 						sample_id = sample_id, 
 						reference_index = reference_bwa_idx, 
 						reference_index_prefix = reference_bwa_idx_prefix, 
-						chrom_sizes = chrom_sizes
+						chrom_sizes = chrom_sizes,
+						resource_monitor_script = resource_monitor_script
 					   }
 	
 	call juicer_hic {input: 
@@ -165,9 +167,14 @@ task microc_align {
 		String memory = "20GB"
 		String disk = "500"
 		String mapq = "20"
+		File resource_monitor_script	
 	}
 
 	command {
+		
+		# Start resource monitoring script
+		chmod +x ${resource_monitor_script}
+		${resource_monitor_script} > resources.log &
 		
 		# Check if bwa index is provided as a tar.gz file ("reference_index")
 		#  or a URI prefix ("reference_index_prefix", e.g. gs://gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.64)
@@ -223,6 +230,7 @@ task microc_align {
 		File mapped_pairs = "mapped.pairs"
 		File bam = "${sample_id}.bam"
 		File bai = "${sample_id}.bam.bai"
+		File resources = "resources.log"
 	}
 
 }
