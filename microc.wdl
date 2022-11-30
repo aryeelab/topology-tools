@@ -104,9 +104,14 @@ workflow microc {
 		File balanced_mcool = cooler.balanced_mcool
 		String pipeline_version = version_info.pipeline_version
 		File qcstats = run_qc.qc_stats_file
-		String total_reads = run_qc.total_reads
+		String reads_total = run_qc.reads_total
 		String reads_20kb = run_qc.dist20kb_reads
-		String perc_20kb = run_qc.dist20kb_percent		
+		String perc_20kb = run_qc.dist20kb_percent	
+		String reads_mapped = run_qc.reads_mapped
+		String reads_nodups = run_qc.reads_nodups
+		String reads_cis_1kb = run_qc.reads_cis_1kb
+		String reads_cis_10kb = run_qc.reads_cis_10kb
+		File resources_align = microc_align.resources
 	}
 
 }
@@ -330,6 +335,10 @@ task run_qc {
 
 	command {
 		python3 /home/qc_stats.py -i ${mapped_pairs} -p ${mapped_stats} -d ${sample_id} 
+		cat ${mapped_stats} | grep -w "total_mapped" | cut -f2
+		cat ${mapped_stats} | grep -w "total_nodups" | cut -f2
+		cat ${mapped_stats} | grep -w "cis_1kb+" | cut -f2		
+		cat ${mapped_stats} | grep -w "cis_10kb+" | cut -f2		
 		zip -q ${sample_id}_qc.zip html_report.html hist.png
 	}
 
@@ -342,8 +351,12 @@ task run_qc {
 	output {
 		File qc_stats_file = "${sample_id}_qc.zip"
 		Array[String] qc_stats = read_lines(stdout())
-		String total_reads = qc_stats[0]
+		String reads_total = qc_stats[0]
 		String dist20kb_reads = qc_stats[1]
 		String dist20kb_percent = qc_stats[2]
+		String reads_mapped = qc_stats[3]
+		String reads_nodups = qc_stats[4]
+		String reads_cis_1kb = qc_stats[5]
+		String reads_cis_10kb = qc_stats[6]		
 	}
 }
