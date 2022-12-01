@@ -1,0 +1,35 @@
+---
+title: "Micro-C QC Notebook"
+output: html_notebook
+---
+
+```{r}
+BiocManager::install("AnVIL", update = FALSE) # for avtable
+library("AnVIL")
+library("tidyr")
+library("ggplot2")
+library("scales")
+
+# Get sample table from Terra
+samples <- avtable ("sample")
+
+# Convert sample table to long format
+metrics <- c("reads_total", "reads_mapped", "reads_nodups", "reads_cis_1kb", "reads_cis_10kb")
+samples_long <- samples %>% select(sample_id, metrics) %>% 
+                            pivot_longer(cols=metrics, names_to="metric", values_to = "num_reads") %>%
+                            mutate(metric = factor(metric, levels=metrics),
+                                   num_reads = as.numeric(num_reads))
+
+```
+
+
+```{r}
+samples_long %>% ggplot(aes(metric, num_reads, group=sample_id)) + geom_line() + 
+  scale_y_continuous(labels=comma) + theme_bw() 
+```
+
+
+```{r}
+samples_long %>% group_by(sample_id) %>% mutate(percent_reads = 100 * num_reads / max(num_reads)) %>% ggplot(aes(percent_reads, sample_id)) + geom_point() + 
+   theme_bw()  + facet_wrap(~metric)
+```
