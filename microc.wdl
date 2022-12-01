@@ -335,6 +335,7 @@ task run_qc {
 
 	command {
 		python3 /home/qc_stats.py -i ${mapped_pairs} -p ${mapped_stats} -d ${sample_id} 
+		cat ${mapped_stats} | grep -w "total" | cut -f2
 		cat ${mapped_stats} | grep -w "total_mapped" | cut -f2
 		cat ${mapped_stats} | grep -w "total_nodups" | cut -f2
 		cat ${mapped_stats} | grep -w "cis_1kb+" | cut -f2		
@@ -351,12 +352,13 @@ task run_qc {
 	output {
 		File qc_stats_file = "${sample_id}_qc.zip"
 		Array[String] qc_stats = read_lines(stdout())
-		String reads_total = qc_stats[0]
+		String reads_total_with_commas = qc_stats[0]
 		String dist20kb_reads = qc_stats[1]
 		String dist20kb_percent = qc_stats[2]
-		String reads_mapped = qc_stats[3]
-		String reads_nodups = qc_stats[4]
-		String reads_cis_1kb = qc_stats[5]
-		String reads_cis_10kb = qc_stats[6]		
+		String reads_total = qc_stats[3]
+		String reads_mapped = qc_stats[4]
+		String reads_nodups = qc_stats[5]
+		String reads_cis_1kb = qc_stats[6]
+		String reads_cis_10kb = qc_stats[7]		
 	}
 }
