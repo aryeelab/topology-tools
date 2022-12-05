@@ -10,6 +10,7 @@
 
   "microc.microc_align.bwa_cores": "2",
   
-  "microc.resource_monitor_script": "tests/monitor_v3.sh"
+  "microc.resource_monitor_script": "tests/monitor_v3.sh",
+  "microc.top_monitor_script": "tests/monitor_top.sh"
 }
 

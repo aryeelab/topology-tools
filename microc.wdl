@@ -40,6 +40,7 @@ workflow microc {
 		File chrom_sizes
 		Boolean merge = true
 		File resource_monitor_script
+		File top_monitor_script
 	}
 
 	if ( merge ) {
@@ -68,7 +69,8 @@ workflow microc {
 						reference_index = reference_bwa_idx, 
 						reference_index_prefix = reference_bwa_idx_prefix, 
 						chrom_sizes = chrom_sizes,
-						resource_monitor_script = resource_monitor_script
+						resource_monitor_script = resource_monitor_script,
+						top_monitor_script = top_monitor_script
 					   }
 	
 	call juicer_hic {input: 
@@ -112,6 +114,7 @@ workflow microc {
 		String reads_cis_1kb = run_qc.reads_cis_1kb
 		String reads_cis_10kb = run_qc.reads_cis_10kb
 		File resources_align = microc_align.resources
+		File top_align = microc_align.top
 	}
 
 }
@@ -172,11 +175,16 @@ task microc_align {
 		String memory = "20GB"
 		String disk = "500"
 		String mapq = "20"
-		File resource_monitor_script	
+		File resource_monitor_script
+		File top_monitor_script
 	}
 
 	command {
 		
+		# Start process monitoring script (with top)
+		chmod +x ${top_monitor_script}
+		${top_monitor_script} > top.log &
+
 		# Start resource monitoring script
 		chmod +x ${resource_monitor_script}
 		${resource_monitor_script} > resources.log &
@@ -236,6 +244,7 @@ task microc_align {
 		File bam = "${sample_id}.bam"
 		File bai = "${sample_id}.bam.bai"
 		File resources = "resources.log"
+		File top = "top.log"
 	}
 
 }
