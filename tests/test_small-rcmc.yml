@@ -3,7 +3,6 @@
   files:
     - path: test-output/mapped.pairs
     - path: test-output/stats.txt
-      md5sum: 8acd9287e5230423e2aae181c7e57bd1
   stdout:
     contains:
       - "workflow finished with status 'Succeeded'"
