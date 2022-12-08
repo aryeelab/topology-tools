@@ -50,14 +50,15 @@ RUN pip3 install pysam==0.19.1
 # Install deeptools
 RUN pip3 install deeptools 
 
-# Install pairtools (Note that we need to pip3 install twice for )
+# Install pairtools 
+# We use a patched version of pairtools since Mapping has moved from collections to collections.abc
+# (See, for example: https://github.com/tensorflow/tensorboard/issues/5478)
 RUN cd /tmp && \
-    wget https://github.com/open2c/pairtools/archive/refs/tags/v1.0.1.tar.gz && \
-    tar zxvf v1.0.1.tar.gz && \
-    cd pairtools-1.0.1 && \
-    ls && \
-    pip3 install . && \
-    pip3 install . 
+	git clone https://github.com/aryeelab/pairtools.git && \
+	cd pairtools && \
+	git checkout v0.3.0p && \
+	pip3 install . && \
+	pip3 install .
 
 # Install Google Cloud SDK (primarily for gsutil)
 RUN curl -sSL https://sdk.cloud.google.com  | bash && \
