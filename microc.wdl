@@ -2,7 +2,7 @@ version 1.0
 
 
 workflow microc {
-	String pipeline_ver = 'dev'
+	String pipeline_ver = 'v1.1b-pairtools0.3.0'
 	String image_id = sub(pipeline_ver, "dev", "latest")
 	
 	meta {
