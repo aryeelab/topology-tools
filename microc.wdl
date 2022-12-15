@@ -289,7 +289,8 @@ task cooler {
 		File chrom_sizes
 		File mapped_pairs
 		Int resolution = "10000"
-		String disk = "200"
+		String memory = "32"
+		String disk = "2000"
 	}
 
 	command {
@@ -301,7 +302,7 @@ task cooler {
 	runtime {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/cooler:${image_id}"
 		cpu: 4
-		memory: "8GB"
+		memory: memory + "GB"
 		disks: "local-disk " + disk + " SSD"
 	}
 
