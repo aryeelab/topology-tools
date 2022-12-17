@@ -222,7 +222,8 @@ task microc_align {
 		
 		bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
 		pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
-		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
+		--max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
+		--nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
 		pairtools sort --nproc ${bwa_cores} | pairtools dedup --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt | pairtools split --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
