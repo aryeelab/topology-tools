@@ -2,7 +2,7 @@ version 1.0
 
 
 workflow microc {
-	String pipeline_ver = 'dev'
+	String pipeline_ver = 'v1.1b-pairtools0.3.0'
 	String image_id = sub(pipeline_ver, "dev", "latest")
 	
 	meta {
@@ -89,12 +89,12 @@ workflow microc {
 
 	call version_info {input: image_id = image_id}
 
-	call run_qc {input:
-		image_id = image_id, 
-		mapped_pairs = microc_align.mapped_pairs,
-		mapped_stats = microc_align.microc_stats,
-		sample_id = sample_id
-	}
+ 	call run_qc {input:
+ 		image_id = image_id, 
+ 		mapped_pairs = microc_align.mapped_pairs,
+ 		mapped_stats = microc_align.microc_stats,
+ 		sample_id = sample_id
+ 	}
 
 	output {
 		File stats = microc_align.microc_stats
@@ -107,8 +107,8 @@ workflow microc {
 		String pipeline_version = version_info.pipeline_version
 		File qcstats = run_qc.qc_stats_file
 		String reads_total = run_qc.reads_total
-		String reads_20kb = run_qc.dist20kb_reads
-		String perc_20kb = run_qc.dist20kb_percent	
+		#String reads_20kb = run_qc.dist20kb_reads
+		#String perc_20kb = run_qc.dist20kb_percent	
 		String reads_mapped = run_qc.reads_mapped
 		String reads_nodups = run_qc.reads_nodups
 		String reads_cis_1kb = run_qc.reads_cis_1kb
@@ -223,7 +223,7 @@ task microc_align {
 		bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
 		pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
 		--max-inter-align-gap 30 --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
-		pairtools sort --nproc ${bwa_cores} | pairtools dedup --backend cython --nproc-in ${bwa_cores} \
+		pairtools sort --nproc ${bwa_cores} | pairtools dedup --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt | pairtools split --nproc-in ${bwa_cores} \
 		--nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
 		samtools sort -@${bwa_cores} -o ${sample_id}.bam; samtools index ${sample_id}.bam
