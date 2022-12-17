@@ -89,12 +89,12 @@ workflow microc {
 
 	call version_info {input: image_id = image_id}
 
-# 	call run_qc {input:
-# 		image_id = image_id, 
-# 		mapped_pairs = microc_align.mapped_pairs,
-# 		mapped_stats = microc_align.microc_stats,
-# 		sample_id = sample_id
-# 	}
+ 	call run_qc {input:
+ 		image_id = image_id, 
+ 		mapped_pairs = microc_align.mapped_pairs,
+ 		mapped_stats = microc_align.microc_stats,
+ 		sample_id = sample_id
+ 	}
 
 	output {
 		File stats = microc_align.microc_stats
@@ -105,14 +105,14 @@ workflow microc {
 		File raw_mcool = cooler.raw_mcool
 		File balanced_mcool = cooler.balanced_mcool
 		String pipeline_version = version_info.pipeline_version
-		#File qcstats = run_qc.qc_stats_file
-		#String reads_total = run_qc.reads_total
+		File qcstats = run_qc.qc_stats_file
+		String reads_total = run_qc.reads_total
 		#String reads_20kb = run_qc.dist20kb_reads
 		#String perc_20kb = run_qc.dist20kb_percent	
-		#String reads_mapped = run_qc.reads_mapped
-		#String reads_nodups = run_qc.reads_nodups
-		#String reads_cis_1kb = run_qc.reads_cis_1kb
-		#String reads_cis_10kb = run_qc.reads_cis_10kb
+		String reads_mapped = run_qc.reads_mapped
+		String reads_nodups = run_qc.reads_nodups
+		String reads_cis_1kb = run_qc.reads_cis_1kb
+		String reads_cis_10kb = run_qc.reads_cis_10kb
 		File resources_align = microc_align.resources
 		File top_align = microc_align.top
 	}
