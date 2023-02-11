@@ -2,6 +2,10 @@ version 1.0
 
 workflow download_url_to_file {
 	call download {}
+	
+	output {
+		File file = download.file
+	}
 }
 
 task download {
