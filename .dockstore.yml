@@ -9,3 +9,6 @@ workflows:
    - name: preprocess_hic
      subclass: WDL
      primaryDescriptorPath: /preprocess_hic.wdl 
+   - name: download_url_to_file
+     subclass: WDL
+     primaryDescriptorPath: /download_url_to_file.wdl
