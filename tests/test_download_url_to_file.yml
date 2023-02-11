@@ -1,0 +1,7 @@
+- name: download_url_to_file
+  command: cromwell run -i tests/download_url_to_file/download_url_to_file.json -o tests/options.json download_url_to_file.wdl
+  files:
+    - path: test-output/test.chrom.sizes
+  stdout:
+    contains:
+      - "workflow finished with status 'Succeeded'"

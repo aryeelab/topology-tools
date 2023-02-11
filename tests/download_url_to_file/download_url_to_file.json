@@ -1,0 +1,6 @@
+{
+  "download_url_to_file.download.extension": "chrom.sizes",
+  "download_url_to_file.download.basename": "test",
+  "download_url_to_file.download.urls": "https://storage.googleapis.com/aryeelab/chrom.sizes/GRCh38.chrom.sizes,https://storage.googleapis.com/aryeelab/chrom.sizes/hg19.chrom.sizes"
+}
+
