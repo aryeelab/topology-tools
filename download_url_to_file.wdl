@@ -26,6 +26,14 @@ task download {
 			curl $URL >> ${out_file}
 		done	
 	}
+	
+	runtime {
+		docker: "ubuntu"
+		cpu: 2
+		memory: "4G"
+		disks: "local-disk " + 300 + " SSD" 
+	}
+
 
 	output {
 		File file = "${out_file}"
