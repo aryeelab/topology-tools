@@ -28,7 +28,7 @@ task download {
 	}
 	
 	runtime {
-		docker: "ubuntu"
+		docker: "seqkit"
 		cpu: 2
 		memory: "4G"
 		disks: "local-disk " + 300 + " SSD" 
