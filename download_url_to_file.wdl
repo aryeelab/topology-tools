@@ -28,7 +28,7 @@ task download {
 	}
 	
 	runtime {
-		docker: "seqkit"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/seqkit"
 		cpu: 2
 		memory: "4G"
 		disks: "local-disk " + 300 + " SSD" 
