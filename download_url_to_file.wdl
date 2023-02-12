@@ -23,7 +23,7 @@ task download {
 		IFS=',' read -ra ADDR <<< "${urls}"
 		for URL in "$${arr}"; do
 			echo "Processing $URL"
-			curl $URL >> ${out_file}
+			curl -L $URL >> ${out_file}
 		done	
 	}
 	
