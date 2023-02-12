@@ -32,7 +32,7 @@ task se_to_pe {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/seqkit"
 		cpu: 8
 		memory: "8G"
-		disks: "local-disk " + 1000 + " SSD" 
+		disks: "local-disk " + 2000 + " SSD" 
 	}
 
 	output {
