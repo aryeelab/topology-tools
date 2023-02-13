@@ -46,7 +46,7 @@ jobs:
             --substitutions _GIT_TAG=$GIT_TAG,_IMAGE_NAME=${{ matrix.IMAGE_NAME }}
   
   test-pipelines:
-    name: Test Micro-C Pipeline
+    name: Test Pipelines
     needs: build-docker
     runs-on: ubuntu-latest
     
