@@ -8,7 +8,7 @@ jobs:
   build-docker:
     strategy:
       matrix:
-        IMAGE_NAME: ['microc', 'microc_qc', 'rcmc', 'juicer', 'cooler', 'seqkit']
+        IMAGE_NAME: ['microc', 'microc_qc', 'rcmc', 'juicer', 'cooler', 'seqkit', 'curl']
 
     name: Build Docker
     runs-on: ubuntu-latest  
@@ -45,7 +45,7 @@ jobs:
             --region=us-central1 \
             --substitutions _GIT_TAG=$GIT_TAG,_IMAGE_NAME=${{ matrix.IMAGE_NAME }}
   
-  test-microc-pipeline:
+  test-pipelines:
     name: Test Micro-C Pipeline
     needs: build-docker
     runs-on: ubuntu-latest
