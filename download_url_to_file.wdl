@@ -28,7 +28,7 @@ task download {
 	}
 	
 	runtime {
-		docker: "us-central1-docker.pkg.dev/aryeelab/docker/curl"
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils"
 		cpu: 2
 		memory: "4G"
 		disks: "local-disk " + 1000 + " SSD" 
