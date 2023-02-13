@@ -125,8 +125,10 @@ task split_string_into_array {
         String arr = "{ADDR[@]}"        
     }
     command {
-        IFS=';' read -ra ADDR <<< "${str}"
-        for i in "$${arr}"; do echo "$i"; done        
+        IFS=',' read -ra ADDR <<< "${str}"
+        for i in "$${arr}"; do 
+        	echo "$i" | tr -d " "; 
+        done        
     }
     runtime {
         docker: "ubuntu"
