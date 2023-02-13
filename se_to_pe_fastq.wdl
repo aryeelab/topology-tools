@@ -24,8 +24,8 @@ task se_to_pe {
 	}
 
 	command {		
-		seqkit subseq -r 1:${read_length} ${fastq} | gzip -c  > ${fq1}
-		seqkit seq -r -p ${fastq} | seqkit subseq -r 1:${read_length} | gzip -c  > ${fq2} 
+		seqkit subseq -r 1:${read_length} ${fastq} -o ${fq1}
+		seqkit seq -r -p ${fastq} | seqkit subseq -r 1:${read_length} -o ${fq2} 
 	}
 	
 	runtime {
