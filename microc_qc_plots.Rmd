@@ -4,14 +4,18 @@ output: html_notebook
 ---
 
 ```{r}
-BiocManager::install("AnVIL", update = FALSE) # for avtable
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager", repos = "https://cran.r-project.org")
 library("AnVIL")
 library("tidyr")
 library("ggplot2")
 library("scales")
 
 # Get sample table from Terra
-samples <- avtable ("sample")
+samples <- avtable("sample", namespace = "aryee-lab", name = "microc-qc")
+
+# Note: if you're running in the Terra RStudio cloud environment the following is enough:
+#samples <- avtable ("sample")
 
 # Convert sample table to long format
 metrics <- c("reads_total", "reads_mapped", "reads_nodups", "reads_cis_1kb", "reads_cis_10kb")
