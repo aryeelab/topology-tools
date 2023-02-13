@@ -33,38 +33,39 @@ workflow microc {
 
     input {
         String sample_id
-        File? fastq_R1
-        File? fastq_R2
+        File fastq_R1
+        File fastq_R2
         File? reference_bwa_idx
         String? reference_bwa_idx_prefix
         File chrom_sizes
-        Boolean merge = true
+        Int num_reads_per_chunk = 10000000
         File resource_monitor_script
         File top_monitor_script
     }
 
-    if ( merge ) {
-        call split_string_into_array as fastq1 {input: 
-                                                str = fastq_R1
-                                            }
-        call split_string_into_array as fastq2 {input: 
-                                                str = fastq_R2
-                                            }
-        call merge_fastqs {input: 
-                            fastq_r1 = fastq1.out, 
-                            fastq_r2 = fastq2.out}
-    }
+    # Split the comma-separated string of fastq file names into an array
+    call split_string_into_array as fastq1 {input: str = fastq_R1}
+    call split_string_into_array as fastq2 {input: str = fastq_R2}
     
-    File? fastq_R1_align = if merge then merge_fastqs.fastq_out1
-                    else fastq_R1
-    File? fastq_R2_align = if merge then merge_fastqs.fastq_out2
-                    else fastq_R2
+    # Calculate the total fastq file size
+    #scatter (fq1 in fastq1.out) { call file_size_gb as fq1_size { input: infile = fq1 } }
+    #scatter (fq2 in fastq2.out) { call file_size_gb as fq2_size { input: infile = fq2 } }    
+    call sum_fastq_size {input: R1 = fastq1.out, R2 = fastq2.out}
+  
+    # Split the fastq files into chunks for parallelization
+    call chunk_fastq_files  { input:    sample_id = sample_id, 
+    									r1_in = fastq1.out, 
+    									r2_in = fastq2.out, 
+    									num_lines_per_chunk = 4 * num_reads_per_chunk, 
+    									disk_gb = 20 + sum_fastq_size.gb * 5 
+    						}
 
-    call microc_align {input: 
+    scatter (fastq_pair in chunk_fastq_files.fastq_pairs) {
+          call microc_align {input: 
                         image_id = image_id, 
                         sample_id = sample_id, 
-                        fastq_R1 = fastq_R1_align, 
-                        fastq_R2 = fastq_R2_align,
+                        fastq_R1 = fastq_pair.left, 
+                        fastq_R2 = fastq_pair.right,
                         sample_id = sample_id, 
                         reference_index = reference_bwa_idx, 
                         reference_index_prefix = reference_bwa_idx_prefix, 
@@ -72,19 +73,36 @@ workflow microc {
                         resource_monitor_script = resource_monitor_script,
                         top_monitor_script = top_monitor_script
                        }
+      }
+
+    call merge_bams { input:         
+    						 image_id = image_id, 
+							 sample_id = sample_id, 
+    						 bams = microc_align.bam,
+    						 resource_monitor_script = resource_monitor_script,
+    						 disk_gb = 30 + sum_fastq_size.gb * 5 
+    }
+    
+    call merge_pairs {input: 
+    	        			 image_id = image_id, 
+							 sample_id = sample_id, 
+    						 mapped_pairs = microc_align.mapped_pairs,
+    						 resource_monitor_script = resource_monitor_script,
+    						 disk_gb = 30 + sum_fastq_size.gb * 5 
+    }
     
     call juicer_hic {input: 
                         image_id = image_id, 
                         sample_id = sample_id, 
                         chrom_sizes = chrom_sizes, 
-                        mapped_pairs = microc_align.mapped_pairs
+                        mapped_pairs = merge_pairs.mapped_pairs
                     }
 
     call cooler {input: 
                         image_id = image_id, 
                         sample_id = sample_id, 
                         chrom_sizes = chrom_sizes, 
-                        mapped_pairs = microc_align.mapped_pairs
+                        mapped_pairs = merge_pairs.mapped_pairs
                     }
 
     call version_info {input: image_id = image_id}
@@ -97,24 +115,21 @@ workflow microc {
     }
 
     output {
-        File stats = microc_align.microc_stats
-        File mapped_pairs = microc_align.mapped_pairs
-        File bam = microc_align.bam
-        File bai = microc_align.bai
+        Array[File] stats = microc_align.microc_stats
+        File mapped_pairs = merge_pairs.mapped_pairs
+        File bam = merge_bams.bam
+        File bai = merge_bams.bai
         File hic = juicer_hic.hic
         File raw_mcool = cooler.raw_mcool
         File balanced_mcool = cooler.balanced_mcool
         String pipeline_version = version_info.pipeline_version
-        #File qcstats = run_qc.qc_stats_file
-        #String reads_20kb = run_qc.dist20kb_reads
-        #String perc_20kb = run_qc.dist20kb_percent 
         String reads_total = run_qc.reads_total
         String reads_mapped = run_qc.reads_mapped
         String reads_nodups = run_qc.reads_nodups
         String reads_cis_1kb = run_qc.reads_cis_1kb
         String reads_cis_10kb = run_qc.reads_cis_10kb
-        File resources_align = microc_align.resources
-        File top_align = microc_align.top
+        Array[File] resources_align = microc_align.resources
+        Array[File] top_align = microc_align.top
     }
 
 }
@@ -138,6 +153,65 @@ task split_string_into_array {
     }
 }
 
+task chunk_fastq_files {
+    input {
+		String sample_id
+		Array[File] r1_in
+		Array[File] r2_in
+		Int num_lines_per_chunk
+		Int disk_gb
+    }
+    
+    command {
+        zcat -f ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat -f ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+    }
+    
+     runtime {
+        continueOnReturnCode: false
+        docker: "debian:stretch"
+        cpu: 4
+        disks: "local-disk " + disk_gb + " SSD"        
+    }   
+    output {
+        Array[File] r1_out = glob("*_R1.fastq.gz")
+        Array[File] r2_out = glob("*_R2.fastq.gz")        
+        Array[Pair[File, File]] fastq_pairs = zip(r1_out, r2_out)
+    }
+}
+
+
+# task file_size_gb {
+#     input {File infile}
+#     command {} 
+#     runtime {
+#         docker: "debian:stretch"
+#         disks: "local-disk 250 SSD"
+#     }
+#     output {
+#         Float gb = size(infile, "GB")
+#     }      
+# }
+
+
+task sum_fastq_size {
+	input {
+		Array[File] R1
+		Array[File] R2
+		Int size_gb = round(size(R1, "GB") + size(R2, "GB"))
+	}
+	command <<<
+		echo "Calculating fastq file size"
+	>>>
+	runtime {
+		docker: "debian:stretch"
+		disks: "local-disk 2000 SSD"
+	}
+	output {
+		Int gb = size_gb
+	}
+}
+          
 task merge_fastqs {
     input {
         Array[File] fastq_r1
@@ -175,7 +249,7 @@ task microc_align {
         File chrom_sizes
         Int bwa_cores = 5
         String memory = "20GB"
-        String disk = "500"
+        String disk = "100"
         String mapq = "20"
         File resource_monitor_script
         File top_monitor_script
@@ -227,9 +301,9 @@ task microc_align {
         --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
         --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
         pairtools sort --nproc ${bwa_cores} | pairtools dedup --nproc-in ${bwa_cores} \
-        --nproc-out ${bwa_cores} --mark-dups --output-stats stats.txt | pairtools split --nproc-in ${bwa_cores} \
-        --nproc-out ${bwa_cores} --output-pairs mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
-        samtools sort -@${bwa_cores} -o ${sample_id}.bam; samtools index ${sample_id}.bam
+        --nproc-out ${bwa_cores} --mark-dups --output-stats chunk.stats.txt | pairtools split --nproc-in ${bwa_cores} \
+        --nproc-out ${bwa_cores} --output-pairs chunk.mapped.pairs --output-sam -|samtools view -bS -@${bwa_cores} | \
+        samtools sort -@${bwa_cores} -o chunk.bam; samtools index chunk.bam
     }
 
     runtime {
@@ -242,15 +316,72 @@ task microc_align {
     }
 
     output {
-        File microc_stats = "stats.txt"
-        File mapped_pairs = "mapped.pairs"
-        File bam = "${sample_id}.bam"
-        File bai = "${sample_id}.bam.bai"
+        File microc_stats = "chunk.stats.txt"
+        File mapped_pairs = "chunk.mapped.pairs"
+        File bam = "chunk.bam"
+        File bai = "chunk.bam.bai"
         File resources = "resources.log"
         File top = "top.log"
     }
 
 }
+
+task merge_bams {
+	input {
+        String image_id
+		String sample_id
+		Array[File] bams    
+		File resource_monitor_script
+		Int disk_gb
+	}    
+    command {
+		chmod u+x ${resource_monitor_script}
+		${resource_monitor_script} > resources.log &
+
+		samtools merge -o ${sample_id}.bam ${sep=' ' bams}
+		samtools index ${sample_id}.bam
+    }
+	runtime {
+		continueOnReturnCode: false
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
+		bootDiskSizeGb: 20
+		cpu: 4            
+		disks: "local-disk " + disk_gb + " SSD"        
+	}
+    output {
+		File resources = "resources.log"
+		File bam = "${sample_id}.bam"
+		File bai = "${sample_id}.bam.bai"
+    }
+}
+
+task merge_pairs {
+	input {
+        String image_id	
+		String sample_id
+		Array[File] mapped_pairs    
+		File resource_monitor_script
+		Int disk_gb
+	}
+    command {
+		chmod u+x ${resource_monitor_script}
+		${resource_monitor_script} > resources.log &
+
+		pairtools merge -o ${sample_id}.mapped.pairs --nproc 12 ${sep=' ' mapped_pairs}
+    }
+	runtime {
+		continueOnReturnCode: false
+		docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
+		bootDiskSizeGb: 20
+		cpu: 16            
+		disks: "local-disk " + disk_gb + " SSD"        
+	}
+    output {
+		File resources = "resources.log"
+		File mapped_pairs = "${sample_id}.mapped.pairs"
+    }
+}
+
 
 task juicer_hic {
     input {
@@ -338,26 +469,23 @@ task version_info {
 task run_qc {
     input {
         String image_id
-        File mapped_stats
+        Array[File] mapped_stats
         String sample_id
-        String memory = "20GB"
-        String disk = "50"
-        String image_id
     }
 
     command {
-        cat ${mapped_stats} | grep -w "total" | cut -f2
-        cat ${mapped_stats} | grep -w "total_mapped" | cut -f2
-        cat ${mapped_stats} | grep -w "total_nodups" | cut -f2
-        cat ${mapped_stats} | grep -w "cis_1kb+" | cut -f2      
-        cat ${mapped_stats} | grep -w "cis_10kb+" | cut -f2     
+        cat ${sep=' ' mapped_stats} | grep -w "total" | cut -f2 | paste -sd+ - | bc
+        cat ${sep=' ' mapped_stats} | grep -w "total_mapped" | cut -f2 | paste -sd+ - | bc
+        cat ${sep=' ' mapped_stats} | grep -w "total_nodups" | cut -f2 | paste -sd+ - | bc
+        cat ${sep=' ' mapped_stats} | grep -w "cis_1kb+" | cut -f2 | paste -sd+ - | bc 
+        cat ${sep=' ' mapped_stats} | grep -w "cis_10kb+" | cut -f2 | paste -sd+ - | bc
     }
 
     runtime {
-        docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc_qc:${image_id}"
+        docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils:${image_id}"
         cpu: 1
-        memory: memory
-        disks: "local-disk " + disk + " SSD"
+        memory: "4GB"
+        disks: "local-disk 10 SSD"
     }
     output {
         #File qc_stats_file = "${sample_id}_qc.zip"
