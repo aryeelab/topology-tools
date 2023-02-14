@@ -48,8 +48,6 @@ workflow microc {
     call split_string_into_array as fastq2 {input: str = fastq_R2}
     
     # Calculate the total fastq file size
-    #scatter (fq1 in fastq1.out) { call file_size_gb as fq1_size { input: infile = fq1 } }
-    #scatter (fq2 in fastq2.out) { call file_size_gb as fq2_size { input: infile = fq2 } }    
     call sum_fastq_size {input: R1 = fastq1.out, R2 = fastq2.out}
   
     # Split the fastq files into chunks for parallelization
@@ -74,14 +72,6 @@ workflow microc {
                         top_monitor_script = top_monitor_script
                        }
       }
-
-#     call merge_bams { input:         
-#                              image_id = image_id, 
-#                              sample_id = sample_id, 
-#                              bams = microc_align.bam,
-#                              resource_monitor_script = resource_monitor_script,
-#                              disk_gb = 30 + sum_fastq_size.gb * 5 
-#     }
     
     call merge_pairs {input: 
                              image_id = image_id, 
@@ -179,20 +169,6 @@ task chunk_fastq_files {
         Array[Pair[File, File]] fastq_pairs = zip(r1_out, r2_out)
     }
 }
-
-
-# task file_size_gb {
-#     input {File infile}
-#     command {} 
-#     runtime {
-#         docker: "debian:stretch"
-#         disks: "local-disk 250 SSD"
-#     }
-#     output {
-#         Float gb = size(infile, "GB")
-#     }      
-# }
-
 
 task sum_fastq_size {
     input {
