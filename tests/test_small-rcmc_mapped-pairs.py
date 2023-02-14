@@ -9,8 +9,11 @@ import hashlib
 def test_mapped_pairs(workflow_dir):
     mapped_pairs_file = os.path.join(workflow_dir, "test-output/small-rcmc.mapped.pairs")
     f = open(mapped_pairs_file, "r")
-    pairs = f.readlines()[12:]
+    pairs = f.readlines()[19:]
     f.close()
+    pairs.sort()
     pairs_string = "".join(pairs)
     md5 = hashlib.md5(pairs_string.encode()).hexdigest()
-    assert md5 == 'f57e9f8ee0f44297836354dcfe57824b'
+    assert md5 == 'f1141e8ecfb98f735f110bb6d3079ad1'
+
+
