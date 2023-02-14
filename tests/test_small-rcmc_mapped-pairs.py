@@ -7,7 +7,7 @@ import hashlib
 
 @pytest.mark.workflow('small-region-capture-micro-c')
 def test_mapped_pairs(workflow_dir):
-    mapped_pairs_file = os.path.join(workflow_dir, "test-output/mapped.pairs")
+    mapped_pairs_file = os.path.join(workflow_dir, "test-output/small-rcmc.mapped.pairs")
     f = open(mapped_pairs_file, "r")
     pairs = f.readlines()[12:]
     f.close()

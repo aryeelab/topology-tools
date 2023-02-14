@@ -1,8 +1,8 @@
 - name: small-region-capture-micro-c
   command: cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json -o tests/options.json microc.wdl
   files:
-    - path: test-output/mapped.pairs
-    - path: test-output/stats.txt
+    - path: test-output/small-rcmc.mapped.pairs
+    - path: test-output/small-rcmc.stats.txt
   stdout:
     contains:
       - "workflow finished with status 'Succeeded'"

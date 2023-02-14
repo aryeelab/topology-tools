@@ -242,8 +242,8 @@ task microc_align {
     input {
         String image_id
         String sample_id
-        File? fastq_R1
-        File? fastq_R2
+        File fastq_R1
+        File fastq_R2
         File? reference_index
         String? reference_index_prefix
         File chrom_sizes
@@ -251,6 +251,7 @@ task microc_align {
         String memory = "20GB"
         String disk = "100"
         String mapq = "20"
+        String chunk_id = basename(fastq_R1, "_R1.fastq.gz")
         File resource_monitor_script
         File top_monitor_script
     }
@@ -259,11 +260,11 @@ task microc_align {
         
         # Start process monitoring script (with top)
         chmod +x ${top_monitor_script}
-        ${top_monitor_script} > top.log &
+        ${top_monitor_script} > ${chunk_id}.top.log &
 
         # Start resource monitoring script
         chmod +x ${resource_monitor_script}
-        ${resource_monitor_script} > resources.log &
+        ${resource_monitor_script} > ${chunk_id}.resources.log &
         
         # Check if bwa index is provided as a tar.gz file ("reference_index")
         #  or a URI prefix ("reference_index_prefix", e.g. gs://gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.64)
@@ -314,8 +315,8 @@ task microc_align {
 
     output {
         File pairsam = "chunk.pairsam"
-        File resources = "resources.log"
-        File top = "top.log"
+        File resources = "${chunk_id}.resources.log"
+        File top = "${chunk_id}.top.log"
     }
 
 }
