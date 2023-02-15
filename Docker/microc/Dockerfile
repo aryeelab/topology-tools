@@ -3,7 +3,9 @@ FROM ubuntu:22.04
 RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
 RUN apt-get update && \
-    apt-get -y install  bedtools \
+    apt-get -y install  autotools-dev \
+                        automake \
+                        bedtools \
                         tabix \
                         build-essential \
                         curl \
@@ -63,13 +65,13 @@ RUN cd /tmp && \
 
 # Install pbgzip
 RUN cd /tmp && \
-	git clone https://github.com/nh13/pbgzip.git && \
-	cd pbgzip && \
-	git checkout 2b09f97b5f20b6d83c63a5c6b408d152e3982974 && \
-	sh autogen.sh && \
-	./configure && \
-	make && \
-	make install
+    git clone https://github.com/nh13/pbgzip.git && \
+    cd pbgzip && \
+    git checkout 2b09f97b5f20b6d83c63a5c6b408d152e3982974 && \
+    sh autogen.sh && \
+    ./configure && \
+    make && \
+    make install
 
 # Install Google Cloud SDK (primarily for gsutil)
 RUN curl -sSL https://sdk.cloud.google.com  | bash && \
