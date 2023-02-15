@@ -6,13 +6,42 @@ workflow se_to_pe_fastq {
 		File fastq
 	}
 
-	call se_to_pe {input: fastq = fastq}
-	
-	output {
-		File fastq1 = se_to_pe.fastq1
-		File fastq2 = se_to_pe.fastq2
+  # Split the fastq file into chunks for parallelization
+	call chunk_fastq_file  { input: 
+		fastq = fastq,
+		num_lines_per_chunk = 40000000
 	}
 
+	scatter (fastq in chunk_fastq_file.chunks) {
+		call se_to_pe {input: fastq = fastq}
+	}
+	
+	output {
+		Array[Pair[File, File]] fastq_pairs = se_to_pe.fastq_pairs
+	}
+
+}
+
+task chunk_fastq_file {
+    input {
+        File fastq
+        String sample_id = basename(fastq, ".fastq.gz")
+        Int num_lines_per_chunk
+    }
+    
+    command {
+        pigz -dc -p2 ${fastq} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --filter='pigz -c -p24 > $FILE.fastq.gz' - ${sample_id}-
+    }
+    
+     runtime {
+        continueOnReturnCode: false
+        docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils"
+        cpu: 32
+        disks: "local-disk 375 LOCAL"        
+    }   
+    output {
+        Array[File] chunks = glob("*.fastq.gz")
+    }
 }
 
 task se_to_pe {
@@ -38,6 +67,7 @@ task se_to_pe {
 	output {
 		File fastq1 = "${fq1}"
 		File fastq2 = "${fq2}"
+		Pair[File, File] fastq_pairs = (fastq1, fastq2)
 	}
 }
 
