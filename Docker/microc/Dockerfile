@@ -4,6 +4,7 @@ RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
 RUN apt-get update && \
     apt-get -y install  bedtools \
+    					bgzip \
                         build-essential \
                         curl \
                         git \

@@ -256,7 +256,7 @@ task microc_align {
         pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
         --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
         --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
-        pairtools sort --nproc ${bwa_cores} > chunk.pairsam
+        pairtools sort --nproc ${bwa_cores} | gzip -c > chunk.pairsam.gz
     }
 
     runtime {
@@ -269,7 +269,7 @@ task microc_align {
     }
 
     output {
-        File pairsam = "chunk.pairsam"
+        File pairsam = "chunk.pairsam.gz"
         File resources = "${chunk_id}.resources.log"
         File top = "${chunk_id}.top.log"
     }
@@ -289,8 +289,8 @@ task merge_pairs {
         ${resource_monitor_script} > resources.log &
 
         pairtools merge --nproc 12 ${sep=' ' pairsams} | \
-        pairtools dedup --nproc-in 6 --nproc-out 6 --mark-dups --output-stats ${sample_id}.stats.txt | \
-        pairtools split --nproc-in 6 --nproc-out 6 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
+        pairtools dedup --nproc-in 2 --nproc-out 8 --mark-dups --output-stats ${sample_id}.stats.txt | \
+        pairtools split --nproc-in 2 --nproc-out 8 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
         samtools view -bS -@6 | \
         samtools sort -@6 -o ${sample_id}.bam
                 
