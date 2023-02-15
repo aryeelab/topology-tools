@@ -4,12 +4,13 @@ workflow se_to_pe_fastq {
 
 	input {
 		File fastq
+		Int num_lines_per_chunk = 40000000
 	}
 
   # Split the fastq file into chunks for parallelization
 	call chunk_fastq_file  { input: 
 		fastq = fastq,
-		num_lines_per_chunk = 40000000
+		num_lines_per_chunk = num_lines_per_chunk
 	}
 
 	scatter (fastq in chunk_fastq_file.chunks) {
