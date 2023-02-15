@@ -193,32 +193,6 @@ task sum_fastq_size {
     }
 }
           
-task merge_fastqs {
-    input {
-        Array[File] fastq_r1
-        Array[File] fastq_r2
-        String memory = "20GB"
-    }
-
-    command {
-        cat ~{sep=' ' fastq_r1} > R1.fastq.gz
-        cat ~{sep=' ' fastq_r2} > R2.fastq.gz
-    }
-
-    runtime {
-        docker: "ubuntu"
-        cpu: 4
-        memory: memory
-        disks: "local-disk " + 300 + " SSD" 
-    }
-
-    output {
-        File? fastq_out1 = "R1.fastq.gz"
-        File? fastq_out2 = "R2.fastq.gz"
-    }
-}
-
-
 task microc_align {
     input {
         String image_id
