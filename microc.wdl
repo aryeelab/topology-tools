@@ -53,6 +53,7 @@ workflow microc {
     # Split the fastq files into chunks for parallelization
     scatter (fastq_pair in zip(fastq1.out, fastq2.out) ) {
                             call chunk_fastq_files  { input:
+                                        image_id = image_id, 
                                         sample_id = sample_id,
                                         r1_in = fastq_pair.left,
                                         r2_in = fastq_pair.right,
@@ -148,6 +149,7 @@ task split_string_into_array {
 
 task chunk_fastq_files {
     input {
+        String image_id
         String sample_id
         File r1_in
         File r2_in
@@ -156,15 +158,15 @@ task chunk_fastq_files {
     }
     
     command {
-        zcat -f ${r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-        zcat -f ${r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        pigz -dc -p2 ${r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='pigz -c -p24 > $FILE.gz' - ${sample_id}-
+        pigz -dc -p2 ${r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='pigz -c -p24 > $FILE.gz' - ${sample_id}-
     }
     
      runtime {
         continueOnReturnCode: false
-        docker: "debian:stretch"
-        cpu: 4
-        disks: "local-disk " + disk_gb + " SSD"        
+        docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils:${image_id}"
+        cpu: 32
+        disks: "local-disk 375 LOCAL"        
     }   
     output {
         Array[File] r1_out = glob("*_R1.fastq.gz")
