@@ -51,14 +51,17 @@ workflow microc {
     call sum_fastq_size {input: R1 = fastq1.out, R2 = fastq2.out}
   
     # Split the fastq files into chunks for parallelization
-    call chunk_fastq_files  { input:    sample_id = sample_id, 
-                                        r1_in = fastq1.out, 
-                                        r2_in = fastq2.out, 
-                                        num_lines_per_chunk = 4 * num_reads_per_chunk, 
-                                        disk_gb = 20 + sum_fastq_size.gb * 5 
+    scatter (fastq_pair in zip(fastq1.out, fastq2.out) ) {
+                            call chunk_fastq_files  { input:
+                                        sample_id = sample_id,
+                                        r1_in = fastq_pair.left,
+                                        r2_in = fastq_pair.right,
+                                        num_lines_per_chunk = 4 * num_reads_per_chunk,
+                                        disk_gb = 20 + sum_fastq_size.gb * 5
                             }
+    }
 
-    scatter (fastq_pair in chunk_fastq_files.fastq_pairs) {
+    scatter (fastq_pair in flatten(chunk_fastq_files.fastq_pairs)) {
           call microc_align {input: 
                         image_id = image_id, 
                         sample_id = sample_id, 
@@ -146,15 +149,15 @@ task split_string_into_array {
 task chunk_fastq_files {
     input {
         String sample_id
-        Array[File] r1_in
-        Array[File] r2_in
+        File r1_in
+        File r2_in
         Int num_lines_per_chunk
         Int disk_gb
     }
     
     command {
-        zcat -f ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-        zcat -f ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat -f ${r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
+        zcat -f ${r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
     }
     
      runtime {
