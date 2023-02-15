@@ -82,7 +82,7 @@ workflow microc {
                              sample_id = sample_id, 
                              pairsams = microc_align.pairsam,
                              resource_monitor_script = resource_monitor_script,
-                             disk_gb = 30 + sum_fastq_size.gb * 5 
+                             disk_gb = 30 + sum_fastq_size.gb * 10 
     }
     
     call juicer_hic {input: 
