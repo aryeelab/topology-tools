@@ -21,7 +21,7 @@ RUN apt-get update && \
                         samtools \
                         wget \
                         zlib1g-dev
-                                                
+                                            
 # Install bwa
 RUN cd /tmp && \
     git clone https://github.com/lh3/bwa.git && \
@@ -60,6 +60,16 @@ RUN cd /tmp && \
     git checkout v0.3.0p && \
     pip3 install . && \
     pip3 install .
+
+# Install pbgzip
+RUN cd /tmp && \
+	git clone https://github.com/nh13/pbgzip.git && \
+	cd pbgzip && \
+	git checkout 2b09f97b5f20b6d83c63a5c6b408d152e3982974 && \
+	sh autogen.sh && \
+	./configure && \
+	make && \
+	make install
 
 # Install Google Cloud SDK (primarily for gsutil)
 RUN curl -sSL https://sdk.cloud.google.com  | bash && \
