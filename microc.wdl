@@ -276,37 +276,6 @@ task microc_align {
 
 }
 
-task merge_bams {
-    input {
-        String image_id
-        String sample_id
-        Array[File] bams    
-        File resource_monitor_script
-        Int disk_gb
-    }    
-    command {
-        chmod u+x ${resource_monitor_script}
-        ${resource_monitor_script} > resources.log &
-
-        samtools merge -o ${sample_id}.bam ${sep=' ' bams}
-        samtools index ${sample_id}.bam
-        
-        
-    }
-    runtime {
-        continueOnReturnCode: false
-        docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
-        bootDiskSizeGb: 20
-        cpu: 4            
-        disks: "local-disk " + disk_gb + " SSD"        
-    }
-    output {
-        File resources = "resources.log"
-        File bam = "${sample_id}.bam"
-        File bai = "${sample_id}.bam.bai"
-    }
-}
-
 task merge_pairs {
     input {
         String image_id 
