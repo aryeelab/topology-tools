@@ -3,6 +3,8 @@
   files:
     - path: test-output/ultima-000.r1.fastq.gz
     - path: test-output/ultima-000.r2.fastq.gz
+    - path: test-output/ultima-001.r1.fastq.gz
+    - path: test-output/ultima-001.r2.fastq.gz
   stdout:
     contains:
       - "workflow finished with status 'Succeeded'"

@@ -1,4 +1,5 @@
 {
-  "se_to_pe_fastq.fastq": "tests/se_to_pe_fastq/ultima.fastq.gz"
+  "se_to_pe_fastq.fastq": "tests/se_to_pe_fastq/ultima.fastq.gz",
+  "se_to_pe_fastq.num_lines_per_chunk": 2000
 }
 
