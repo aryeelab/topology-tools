@@ -256,7 +256,7 @@ task microc_align {
         pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
         --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
         --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
-        pairtools sort --nproc ${bwa_cores} | gzip -c > chunk.pairsam.gz
+        pairtools sort --nproc ${bwa_cores} -o chunk.pairsam.gz
     }
 
     runtime {
