@@ -28,6 +28,7 @@ task chunk_fastq_file {
         File fastq
         String sample_id = basename(fastq, ".fastq.gz")
         Int num_lines_per_chunk
+        Int disk_gb = 1125
     }
     
     command {
@@ -38,7 +39,7 @@ task chunk_fastq_file {
         continueOnReturnCode: false
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils"
         cpu: 32
-        disks: "local-disk 375 LOCAL"        
+        disks: "local-disk " + disk_gb + " LOCAL"        
     }   
     output {
         Array[File] chunks = glob("*.fastq.gz")
