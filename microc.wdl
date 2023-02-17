@@ -1,6 +1,5 @@
 version 1.0
 
-
 workflow microc {
     String pipeline_ver = 'dev'
     String image_id = sub(pipeline_ver, "dev", "latest")
@@ -33,8 +32,10 @@ workflow microc {
 
     input {
         String sample_id
-        File fastq_R1
-        File fastq_R2
+        File? fastq_r1
+        File? fastq_r2
+        Array[File]? fastq_r1_chunks
+        Array[File]? fastq_r2_chunks
         File? reference_bwa_idx
         String? reference_bwa_idx_prefix
         File chrom_sizes
@@ -43,31 +44,37 @@ workflow microc {
         File top_monitor_script
     }
 
-    # Split the comma-separated string of fastq file names into an array
-    call split_string_into_array as fastq1 {input: str = fastq_R1}
-    call split_string_into_array as fastq2 {input: str = fastq_R2}
+	#if (fastq_r1_chunks == None || fastq_r2_chunks == None) {
+		# Split the comma-separated string of fastq file names into an array
+		call split_string_into_array as fastq1 {input: str = fastq_r1}
+		call split_string_into_array as fastq2 {input: str = fastq_r2}
+	
+		# Split the fastq files into chunks for parallelization
+		scatter (fastq_pair in zip(fastq1.out, fastq2.out) ) {
+								call chunk_fastq_files  { input:
+											image_id = image_id, 
+											sample_id = sample_id,
+											r1_in = fastq_pair.left,
+											r2_in = fastq_pair.right,
+											num_lines_per_chunk = 4 * num_reads_per_chunk,
+											disk_gb = 20 + sum_fastq_size.gb * 5
+								}
+		}
+
+		Array[File] fastq_r1_chunks = chunk_fastq_files.r1_chunks
+		Array[File] fastq_r2_chunks = chunk_fastq_files.r2_chunks
+	#}
     
     # Calculate the total fastq file size
-    call sum_fastq_size {input: R1 = fastq1.out, R2 = fastq2.out}
-  
-    # Split the fastq files into chunks for parallelization
-    scatter (fastq_pair in zip(fastq1.out, fastq2.out) ) {
-                            call chunk_fastq_files  { input:
-                                        image_id = image_id, 
-                                        sample_id = sample_id,
-                                        r1_in = fastq_pair.left,
-                                        r2_in = fastq_pair.right,
-                                        num_lines_per_chunk = 4 * num_reads_per_chunk,
-                                        disk_gb = 20 + sum_fastq_size.gb * 5
-                            }
-    }
+    
+    call sum_fastq_size {input: fastq_r1_chunks = fastq_r1_chunks, fastq_r2_chunks = fastq_r2_chunks}
 
-    scatter (fastq_pair in flatten(chunk_fastq_files.fastq_pairs)) {
+    scatter (fastq_pair in zip(flatten(fastq_r1_chunks), flatten(fastq_r2_chunks))) {
           call microc_align {input: 
                         image_id = image_id, 
                         sample_id = sample_id, 
-                        fastq_R1 = fastq_pair.left, 
-                        fastq_R2 = fastq_pair.right,
+                        fastq_r1 = fastq_pair.left, 
+                        fastq_r2 = fastq_pair.right,
                         sample_id = sample_id, 
                         reference_index = reference_bwa_idx, 
                         reference_index_prefix = reference_bwa_idx_prefix, 
@@ -155,6 +162,7 @@ task chunk_fastq_files {
         File r2_in
         Int num_lines_per_chunk
         Int disk_gb
+        Int disk_gb_local = ceil(disk_gb/375) * 375
     }
     
     command {
@@ -166,20 +174,20 @@ task chunk_fastq_files {
         continueOnReturnCode: false
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils:${image_id}"
         cpu: 32
-        disks: "local-disk 375 LOCAL"        
+        disks: "local-disk " + disk_gb_local + " LOCAL"        
     }   
     output {
-        Array[File] r1_out = glob("*_R1.fastq.gz")
-        Array[File] r2_out = glob("*_R2.fastq.gz")        
-        Array[Pair[File, File]] fastq_pairs = zip(r1_out, r2_out)
+        Array[File] r1_chunks = glob("*_R1.fastq.gz")
+        Array[File] r2_chunks = glob("*_R2.fastq.gz")        
+        Array[Pair[File, File]] pair_chunks = zip(r1_chunks, r2_chunks)
     }
 }
 
 task sum_fastq_size {
     input {
-        Array[File] R1
-        Array[File] R2
-        Int size_gb = round(size(R1, "GB") + size(R2, "GB"))
+		Array[File]? fastq_r1_chunks
+		Array[File]? fastq_r2_chunks
+        Int size_gb = round(size(fastq_r1_chunks, "GB") + size(fastq_r2_chunks, "GB"))
     }
     command <<<
         echo "Calculating fastq file size"
@@ -197,8 +205,8 @@ task microc_align {
     input {
         String image_id
         String sample_id
-        File fastq_R1
-        File fastq_R2
+        File fastq_r1
+        File fastq_r2
         File? reference_index
         String? reference_index_prefix
         File chrom_sizes
@@ -206,7 +214,7 @@ task microc_align {
         String memory = "20GB"
         String disk = "100"
         String mapq = "20"
-        String chunk_id = basename(fastq_R1, "_R1.fastq.gz")
+        String chunk_id = basename(fastq_r1, "_R1.fastq.gz")
         File resource_monitor_script
         File top_monitor_script
     }
@@ -252,7 +260,7 @@ task microc_align {
         GENOME_INDEX_FA="$(dirname $BWT)"/"$(basename $BWT .bwt)"
         echo "Using bwa index: $GENOME_INDEX_FA"
         
-        bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_R1} ${fastq_R2}| \
+        bwa mem -5SP -T0 -t${bwa_cores} $GENOME_INDEX_FA ${fastq_r1} ${fastq_r2}| \
         pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
         --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
         --nproc-in ${bwa_cores} --nproc-out ${bwa_cores} --chroms-path ${chrom_sizes} | \
