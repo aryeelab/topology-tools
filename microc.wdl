@@ -44,7 +44,7 @@ workflow microc {
         File top_monitor_script
     }
 
-	#if (fastq_r1_chunks == None || fastq_r2_chunks == None) {
+	if (fastq_r1_chunks == None || fastq_r2_chunks == None) {
 		# Split the comma-separated string of fastq file names into an array
 		call split_string_into_array as fastq1 {input: str = fastq_r1}
 		call split_string_into_array as fastq2 {input: str = fastq_r2}
@@ -61,12 +61,11 @@ workflow microc {
 								}
 		}
 
-		Array[File] fastq_r1_chunks = chunk_fastq_files.r1_chunks
-		Array[File] fastq_r2_chunks = chunk_fastq_files.r2_chunks
-	#}
+		Array[Array[File]] fastq_r1_chunks = chunk_fastq_files.r1_chunks
+		Array[Array[File]] fastq_r2_chunks = chunk_fastq_files.r2_chunks
+	}
     
     # Calculate the total fastq file size
-    
     call sum_fastq_size {input: fastq_r1_chunks = fastq_r1_chunks, fastq_r2_chunks = fastq_r2_chunks}
 
     scatter (fastq_pair in zip(flatten(fastq_r1_chunks), flatten(fastq_r2_chunks))) {
