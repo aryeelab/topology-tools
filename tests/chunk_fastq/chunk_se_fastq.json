@@ -1,0 +1,5 @@
+{
+  "chunk_se_fastq.sample_id": "small-rcmc",
+  "chunk_se_fastq.fastq": ["tests/small-region-capture-micro-c/small_rcmc_r1.fq.gz"],
+  "chunk_se_fastq.num_reads_per_chunk": "50000"
+}

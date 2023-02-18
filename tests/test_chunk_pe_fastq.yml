@@ -1,0 +1,10 @@
+- name: chunk_pe_fastq
+  command: cromwell run -i tests/chunk_pe_fastq/chunk_fastq.json  -o tests/options.json chunk_pe_fastq.wdl
+  files:
+    - path: test-output/small-rcmc-000_r1.fastq.gz
+    - path: test-output/small-rcmc-000_r2.fastq.gz
+    - path: test-output/small-rcmc-001_r1.fastq.gz
+    - path: test-output/small-rcmc-001_r2.fastq.gz        
+  stdout:
+    contains:
+      - "workflow finished with status 'Succeeded'"
