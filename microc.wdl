@@ -111,27 +111,6 @@ workflow microc {
 
 }
 
-task split_string_into_array {
-    input {
-        String? str
-        String arr = "{ADDR[@]}"        
-    }
-    command {
-        IFS=',' read -ra ADDR <<< "${str}"
-        for i in "$${arr}"; do 
-            echo "$i" | tr -d " "; 
-        done        
-    }
-    runtime {
-        docker: "ubuntu"
-    }
-    output {
-        Array[String] out = read_lines(stdout())
-    }
-}
-
-
-
 task sum_fastq_size {
     input {
 		Array[File] fastq_r1

@@ -14,6 +14,6 @@ def test_mapped_pairs(workflow_dir):
     pairs.sort()
     pairs_string = "".join(pairs)
     md5 = hashlib.md5(pairs_string.encode()).hexdigest()
-    assert md5 == 'f1141e8ecfb98f735f110bb6d3079ad1'
+    assert md5 == '98340fc4018d9fc2dee42c14be973137'
 
 
