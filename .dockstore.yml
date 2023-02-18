@@ -12,6 +12,12 @@ workflows:
    - name: download_url_to_file
      subclass: WDL
      primaryDescriptorPath: /download_url_to_file.wdl
+   - name: chunk_se_fastq
+     subclass: WDL
+     primaryDescriptorPath: /chunk_se_fastq.wdl
+   - name: chunk_pe_fastq
+     subclass: WDL
+     primaryDescriptorPath: /chunk_pe_fastq.wdl
    - name: se_to_pe_fastq
      subclass: WDL
      primaryDescriptorPath: /se_to_pe_fastq.wdl
