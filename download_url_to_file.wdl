@@ -2,41 +2,41 @@ version 1.0
 
 workflow download_url_to_file {
 
-	call download {}
+	input {
+		Array[String] urls
+	}
+	
+	scatter (url in urls) {
+		call download {input: url = url}
+	}
+	
 	
 	output {
-		File file = download.file
+		Array[File] file = download.file
 	}
 
 }
 
 task download {
 	input {
-		String basename
-		String extension = "fastq.gz"
-		String urls
-		String out_file = basename + '.' + extension
-		String arr = "{ADDR[@]}" 
+		String url
+		String filename = basename(url)
 	}
 
 	command {
-		IFS=',' read -ra ADDR <<< "${urls}"
-		for URL in "$${arr}"; do
-			echo "Processing $URL"
-			curl -L $URL >> ${out_file}
-		done	
+		echo "Downloading ${url}..."
+		curl -o ${filename} ${url}
 	}
 	
 	runtime {
 		docker: "us-central1-docker.pkg.dev/aryeelab/docker/utils"
 		cpu: 2
 		memory: "4G"
-		disks: "local-disk " + 1000 + " SSD" 
+		disks: "local-disk " + 500 + " SSD" 
 	}
 
-
 	output {
-		File file = "${out_file}"
+		File file = "${filename}"
 	}
 }
 
