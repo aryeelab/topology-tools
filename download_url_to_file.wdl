@@ -25,7 +25,7 @@ task download {
 
 	command {
 		echo "Downloading ${url}..."
-		curl -o ${filename} ${url}
+		curl -L -o ${filename} ${url}
 	}
 	
 	runtime {
