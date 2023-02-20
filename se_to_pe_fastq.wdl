@@ -4,7 +4,6 @@ workflow se_to_pe_fastq {
 
 	input {
 		Array[File] fastq
-		Int num_lines_per_chunk = 40000000
 	}
 
 	scatter (fq in fastq) {
