@@ -237,7 +237,8 @@ task merge_pairs {
         continueOnReturnCode: false
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
         bootDiskSizeGb: 20
-        cpu: 16            
+        cpu: 16        
+        memory: 16GB    
         disks: "local-disk " + disk_gb + " SSD"        
     }
     output {
