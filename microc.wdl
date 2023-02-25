@@ -257,13 +257,12 @@ task juicer_hic {
         String sample_id
         File chrom_sizes
         File mapped_pairs
-        Int cores = 2
-        String memory = "40GB"
+        Int cores = 4
         String disk = "200"
     }
 
     command {
-        java -Xmx32000m  -Djava.awt.headless=true -jar /usr/local/bin/juicer_tools_1.22.01.jar pre \
+        java -Xmx120g  -Djava.awt.headless=true -jar /usr/local/bin/juicer_tools_1.22.01.jar pre \
             --threads ${cores} \
             ${mapped_pairs} \
             ${sample_id}.hic \
@@ -273,7 +272,7 @@ task juicer_hic {
     runtime {
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/juicer:${image_id}"
         bootDiskSizeGb: 40
-        memory: memory
+        memory: "128GB"
         disks: "local-disk " + disk + " SSD"
     }
 
