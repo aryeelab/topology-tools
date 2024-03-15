@@ -5,11 +5,12 @@ The `small-region-capture-micro-c` dataset, for example, is created by `small-re
  
 To use locally install make sure `pytest-workflow` is installed. 
 
-	conda create --name topology-tools
-	conda activate topology-tools
-	conda install -c conda-forge pytest-workflow
+	mamba create --name topology-tools
+	mamba activate topology-tools
+	mamba install -c conda-forge pytest-workflow
 
 To run tests:
 
-	conda activate topology-tools # Once per shell session
+	# From the topology-tools directory
+	mamba activate topology-tools # Once per shell session
 	pytest --git-aware --keep-workflow-wd-on-fail
