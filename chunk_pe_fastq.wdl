@@ -28,9 +28,17 @@ workflow chunk_pe_fastq {
 		}
 	}
 	
+	call sort_chunks as sort_chunks1 { input:
+		chunks = flatten(chunk_fastq1.chunks)
+	}
+
+	call sort_chunks as sort_chunks2 { input:
+		chunks = flatten(chunk_fastq2.chunks)
+	}
+	
 	output {
-		Array[File] fastq1_chunks = flatten(chunk_fastq1.chunks)
-		Array[File] fastq2_chunks = flatten(chunk_fastq2.chunks)
+		Array[File] fastq1_chunks = sort_chunks1.sorted_chunks
+		Array[File] fastq2_chunks = sort_chunks2.sorted_chunks
 	}
 }
 
@@ -57,4 +65,25 @@ task chunk_fastq_file {
     output {
         Array[File] chunks = glob("*.fastq.gz")
     }
+}
+
+task sort_chunks { 
+	input {
+		Array[String] chunks
+	}
+	
+	command {
+		echo ${sep=" " chunks} | tr " " "\n" | sort
+	}
+	
+	runtime {
+        continueOnReturnCode: false
+        docker: "ubuntu"
+        cpu: 1
+    } 
+    
+    output {
+        Array[String] sorted_chunks = read_lines(stdout())
+    }
+    
 }
