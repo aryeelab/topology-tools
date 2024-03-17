@@ -142,6 +142,7 @@ task microc_align {
         String memory = "20GB"
         String disk = "100"
         String mapq = "20"
+        Int preemptible = 0
         String chunk_id = basename(fastq_r1, "_R1.fastq.gz")
         File resource_monitor_script
         File top_monitor_script
@@ -197,7 +198,7 @@ task microc_align {
 
     runtime {
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
-        preemptible: 1
+        preemptible: preemptible
         bootDiskSizeGb: 40
         cpu: bwa_cores
         memory: memory
