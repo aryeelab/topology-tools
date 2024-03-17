@@ -197,6 +197,7 @@ task microc_align {
 
     runtime {
         docker: "us-central1-docker.pkg.dev/aryeelab/docker/microc:${image_id}"
+        preemptible: 1
         bootDiskSizeGb: 40
         cpu: bwa_cores
         memory: memory
