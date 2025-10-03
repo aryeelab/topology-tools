@@ -39,7 +39,11 @@ jobs:
     # Build and push image to Google Container Registry
     - name: Build
       run: |-
-        GIT_TAG=$(git describe --tags)  
+        GIT_TAG=$(git describe --tags)
+        echo "Building Docker image: ${{ matrix.IMAGE_NAME }}"
+        echo "Using Git tag: $GIT_TAG"
+        echo "Image will be tagged as: us-central1-docker.pkg.dev/aryeelab/docker/${{ matrix.IMAGE_NAME }}:$GIT_TAG"
+        echo "Image will also be tagged as: us-central1-docker.pkg.dev/aryeelab/docker/${{ matrix.IMAGE_NAME }}:latest"
         gcloud builds submit \
             --config Docker/cloudbuild.yaml \
             --region=us-central1 \
