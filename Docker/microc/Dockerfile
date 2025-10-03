@@ -55,7 +55,16 @@ RUN cd /tmp && \
     python3 setup.py build_ext --inplace && \
     pip3 install .
 
-
+# Install pbgzip (need autotools for this)
+RUN apt-get update && apt-get -y install autotools-dev automake && \
+    cd /tmp && \
+	git clone https://github.com/nh13/pbgzip.git && \
+	cd pbgzip && \
+	git checkout 2b09f97b5f20b6d83c63a5c6b408d152e3982974 && \
+	sh autogen.sh && \
+	./configure && \
+	make && \
+	make install
 
 # Install Google Cloud SDK (primarily for gsutil)
 RUN curl -sSL https://sdk.cloud.google.com  | bash && \
