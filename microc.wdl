@@ -1,7 +1,7 @@
 version 1.0
 
 workflow microc {
-    String pipeline_ver = 'v1.1b11'
+    String pipeline_ver = 'v1.1'
     String image_id = sub(pipeline_ver, "dev", "latest")
     
     meta {
