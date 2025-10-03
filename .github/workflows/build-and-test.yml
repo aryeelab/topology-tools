@@ -107,13 +107,13 @@ jobs:
       run: |
         cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json microc.wdl
 
-    - name: Upload cromwell logs to GCP bucket 
+    - name: Upload cromwell logs as GitHub artifact
       if: ${{ failure() }}
-      run: |
-        GIT_TAG=$(git describe --tags)
-        LOG_TGZ=$(date +"%Y-%m-%d")-cromwell-executions-${GIT_TAG}.tgz
-        tar cfv $LOG_TGZ /home/runner/work/topology-tools/topology-tools/cromwell-executions
-        gsutil cp $LOG_TGZ gs://aryeelab-github-actions-logs/
+      uses: actions/upload-artifact@v3
+      with:
+        name: cromwell-execution-logs
+        path: cromwell-executions/
+        retention-days: 30
 
     - name: Show pytest logs
       run: |           
