@@ -29,20 +29,9 @@ ENV PATH="/opt/venv/bin:${PATH}"
 # Modern build tooling first
 RUN pip install --upgrade pip setuptools wheel
 
-# Modern Python packages - Ubuntu 24.04 + Python 3.12 handles dependencies better
+# Essential Python packages for pairtools and other bioinformatics tools
 RUN pip install "numpy>=2.0.0" "scipy>=1.11" \
-    pandas pillow tabulate markupsafe cython pythran \
-    pysam matplotlib numpydoc plotly
-
-# Install architecture-specific packages (some packages like pyBigWig may not have arm64 wheels)
-RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        pip install pyBigWig py2bit; \
-    else \
-        echo "Skipping pyBigWig and py2bit on non-x86_64 architecture"; \
-    fi
-
-# Install deeptools separately with --no-deps to avoid deeptoolsintervals issue
-RUN pip install --no-deps deeptools
+    pandas pysam
 
 # Install bwa
 RUN cd /tmp && \
@@ -81,11 +70,12 @@ RUN curl -sSL https://sdk.cloud.google.com | bash && \
 
 # Sanity check: prove we load consistent wheels from the venv
 RUN python - <<'PY'
-import sys, numpy, scipy, pandas
+import sys, numpy, scipy, pandas, pysam
 print("Python:", sys.version.split()[0])
 print("NumPy:", numpy.__version__, "from", numpy.__file__)
 print("SciPy:", scipy.__version__, "from", scipy.__file__)
 print("pandas:", pandas.__version__, "from", pandas.__file__)
+print("pysam:", pysam.__version__, "from", pysam.__file__)
 PY
 
 # Optional version stamp for reproducibility
