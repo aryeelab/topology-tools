@@ -94,10 +94,22 @@ jobs:
       name: 'Docker login to Artifact Registry'
       uses: 'docker/login-action@v1'
       with:
-        registry: 'us-central1-docker.pkg.dev' 
+        registry: 'us-central1-docker.pkg.dev'
         username: 'oauth2accesstoken'
         password: '${{ steps.auth.outputs.access_token }}'
- 
+
+    - name: Pre-pull Docker images for testing
+      run: |
+        GIT_TAG=$(git describe --tags)
+        echo "Pulling Docker images with tag: $GIT_TAG"
+        # Wait a moment for images to be fully available in registry
+        sleep 30
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/microc:$GIT_TAG
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/juicer:$GIT_TAG
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/cooler:$GIT_TAG
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/utils:$GIT_TAG
+        echo "Successfully pulled all required images"
+
     - name: Run tests
       run: |
         pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow
@@ -105,6 +117,12 @@ jobs:
     - name: Run pipeline to get full cromwell logs if pytest fails
       if: ${{ failure() }}
       run: |
+        GIT_TAG=$(git describe --tags)
+        echo "Ensuring Docker images are available for cromwell run"
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/microc:$GIT_TAG || echo "Failed to pull microc image"
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/juicer:$GIT_TAG || echo "Failed to pull juicer image"
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/cooler:$GIT_TAG || echo "Failed to pull cooler image"
+        docker pull us-central1-docker.pkg.dev/aryeelab/docker/utils:$GIT_TAG || echo "Failed to pull utils image"
         cromwell run -i tests/small-region-capture-micro-c/small_rcmc.json microc.wdl
 
     - name: Upload cromwell logs as GitHub artifact
