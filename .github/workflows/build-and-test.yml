@@ -109,7 +109,7 @@ jobs:
 
     - name: Upload cromwell logs as GitHub artifact
       if: ${{ failure() }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cromwell-execution-logs
         path: cromwell-executions/
