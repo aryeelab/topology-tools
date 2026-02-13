@@ -20,6 +20,32 @@ Then authenticate with Google for access to the docker image registry
 	gcloud auth login
 	gcloud auth configure-docker us-central1-docker.pkg.dev
 
+
+#### Which reference genome to use?
+
+For GRCh38 we recommend using the "primary" analysis set that contains the 25 primary chromosomes, but no unplaced contigs and no alt contigs.
+
+```
+# Download the genome
+wget -c ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+gunzip -k GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+
+# Keep only primary chromosomes (drop chrUn*, *_random and *alt)
+seqkit grep -r -p '^chr([0-9]+|X|Y|M)$' GCA_000001405.15_GRCh38_no_alt_analysis_set.fna > GCA_000001405.15_GRCh38.primary.fna
+
+# Verify chromosome count
+grep -c '^>' GCA_000001405.15_GRCh38.primary.fna   # expect 25
+
+# Make the FASTA index and chrom.sizes
+samtools faidx GCA_000001405.15_GRCh38.primary.fna
+cut -f1,2 GCA_000001405.15_GRCh38.primary.fna.fai > GCA_000001405.15_GRCh38.primary.chrom.sizes
+
+# Make the BWA index
+bwa index -a bwtsw GCA_000001405.15_GRCh38.primary.fna
+```
+
+
+
 ## Running the WDL workflows in Cromwell
 
 #### Micro-C
