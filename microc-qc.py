@@ -7,9 +7,16 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Iterable, TextIO
+
+_PROGRESS_INTERVAL = 500_000
+
+
+def _progress(msg: str, end: str = "") -> None:
+    print(f"\r{msg}", end=end, file=sys.stderr, flush=True)
 
 
 def open_textfile(path: Path) -> TextIO:
@@ -26,7 +33,20 @@ def infer_consensus_read_length(read_lengths: Counter[int]) -> int | None:
     return read_lengths.most_common(1)[0][0]
 
 
-def parse_pairs_file(path: Path, cis_distance: int = 10_000) -> dict:
+def _pairs_progress_pct(handle: TextIO, file_size: int) -> str:
+    """Return a formatted percent-complete string, or empty string on failure."""
+    try:
+        # gzip.open("rt") -> TextIOWrapper(GzipFile); plain open -> TextIOWrapper(BufferedReader)
+        inner = getattr(handle, "buffer", handle)
+        pos = getattr(inner, "fileobj", inner).tell()
+        if file_size > 0:
+            return f" ({100 * pos // file_size}%)"
+    except Exception:
+        pass
+    return ""
+
+
+def parse_pairs_file(path: Path, cis_distance: int = 10_000, progress: bool = True) -> dict:
     """Stream a pairs/pairsam file and compute QC metrics."""
     required_columns = {
         "chrom1",
@@ -48,6 +68,7 @@ def parse_pairs_file(path: Path, cis_distance: int = 10_000) -> dict:
     cis_long_range_pairs = 0
     fragment_lengths: Counter[int] = Counter()
     read_lengths: Counter[int] = Counter()
+    file_size = path.stat().st_size
 
     with open_textfile(path) as handle:
         for raw_line in handle:
@@ -70,6 +91,9 @@ def parse_pairs_file(path: Path, cis_distance: int = 10_000) -> dict:
 
             fields = raw_line.rstrip("\n").split("\t")
             non_dup_reads += 1
+            if progress and non_dup_reads % _PROGRESS_INTERVAL == 0:
+                pct = _pairs_progress_pct(handle, file_size)
+                _progress(f"  pairs: {non_dup_reads:,} reads{pct}")
 
             chrom1 = fields[column_index["chrom1"]]
             chrom2 = fields[column_index["chrom2"]]
@@ -92,6 +116,9 @@ def parse_pairs_file(path: Path, cis_distance: int = 10_000) -> dict:
             fragment_lengths[abs(pos31 - pos51) + 1] += 1
             fragment_lengths[abs(pos32 - pos52) + 1] += 1
 
+    if progress:
+        _progress(f"  pairs: {non_dup_reads:,} reads (100%)", end="\n")
+
     return {
         "non_dup_reads": non_dup_reads,
         "cis_long_range_pairs": cis_long_range_pairs,
@@ -111,7 +138,7 @@ def is_unique_alignment(record, unique_mapq_min: int) -> bool:
     return record.mapping_quality >= unique_mapq_min
 
 
-def parse_bam_file(path: Path, unique_mapq_min: int = 20) -> dict:
+def parse_bam_file(path: Path, unique_mapq_min: int = 20, progress: bool = True) -> dict:
     """Compute read-based metrics from BAM using pysam."""
     try:
         import pysam
@@ -135,6 +162,11 @@ def parse_bam_file(path: Path, unique_mapq_min: int = 20) -> dict:
                 read_lengths[record.query_length] += 1
             if is_unique_alignment(record, unique_mapq_min):
                 unique_reads += 1
+            if progress and total_reads % _PROGRESS_INTERVAL == 0:
+                _progress(f"  bam:   {total_reads:,} reads")
+
+    if progress:
+        _progress(f"  bam:   {total_reads:,} reads", end="\n")
 
     return {
         "total_reads": total_reads,
@@ -279,8 +311,13 @@ def build_batch_summary(
     unique_mapq_min: int,
 ) -> dict:
     """Assemble per-sample summaries for a batch run."""
+    n = len(sample_ids)
+    print(f"Processing {n} sample{'s' if n != 1 else ''}...", file=sys.stderr)
     samples = []
-    for sample_id, pairs_path, bam_path in zip(sample_ids, pairs_paths, bam_paths):
+    for i, (sample_id, pairs_path, bam_path) in enumerate(
+        zip(sample_ids, pairs_paths, bam_paths), start=1
+    ):
+        print(f"[{i}/{n}] {sample_id}", file=sys.stderr)
         pairs_metrics = parse_pairs_file(pairs_path, cis_distance=cis_distance)
         bam_metrics = parse_bam_file(bam_path, unique_mapq_min=unique_mapq_min)
         samples.append(
