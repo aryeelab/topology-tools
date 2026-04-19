@@ -102,7 +102,9 @@ process microc_align {
 }
 process mergepairs {
     // clusterOptions '-x node26,node20,node14'
-    publishDir params.outdir
+    publishDir params.bamdir ?: params.outdir, pattern: "*.bam*"
+    publishDir params.pairsdir ?: params.outdir, pattern: "*.mapped.pairs"
+    publishDir params.outdir, pattern: "*.stats.txt"
     input:
     path tmpdir
     val sample_id
