@@ -64,7 +64,7 @@ process microc_align {
     """
     #!/bin/bash
     set -eo pipefail
-    trap 'hostname >> /cluster/aryeelab/martin/failed_nodes_microc_${params.sample_id}.txt' ERR
+    trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
 
     export TMPDIR=${tmpdir}
     echo ${fastq_r1} ${fastq_r2}
@@ -115,7 +115,7 @@ process mergepairs {
     """
     #!/bin/bash
     set -eo pipefail
-    trap 'hostname >> /cluster/aryeelab/martin/failed_nodes_microc_${params.sample_id}.txt' ERR
+    trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
 
     export TMPDIR=${tmpdir}
     echo ${pairsams}
