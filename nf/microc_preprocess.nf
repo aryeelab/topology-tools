@@ -68,14 +68,20 @@ process microc_align {
 
     export TMPDIR=${tmpdir}
     echo ${fastq_r1} ${fastq_r2}
-    if [ ! -z "${reference_index}" ]
-    then
+    if [[ "${reference_index}" == *.tar.gz ]] || [[ "${reference_index}" == *.tgz ]]; then
         echo "Using provided reference .tar.gz: ${reference_index}"
         outdir="genome_index"
         mkdir \${outdir}
         tar zxvf ${reference_index} -C \${outdir}
+        BWT=\$(find "\${outdir}" -name '*.bwt')
+        GENOME_INDEX_FA=\$(dirname "\${BWT}")/\$(basename "\${BWT}" .bwt)
+    elif [ ! -z "${reference_index}" ]; then
+        echo "Using filesystem index prefix: ${reference_index}"
+        # Follow the Nextflow-staged symlink to get the real path so BWA can
+        # find the companion .amb/.ann/.bwt/.pac/.sa files alongside it
+        GENOME_INDEX_FA=\$(realpath ${reference_index})
     else
-        echo "Using reference_index_prefix: ${reference_index_prefix}"
+        echo "Using GCS reference_index_prefix: ${reference_index_prefix}"
         mkdir genome_index
         cd genome_index
         gsutil cp ${reference_index_prefix}.amb .
@@ -83,15 +89,11 @@ process microc_align {
         gsutil cp ${reference_index_prefix}.bwt .
         gsutil cp ${reference_index_prefix}.pac .
         gsutil cp ${reference_index_prefix}.sa .
-        echo "Downloaded bwa index files:"
-        ls -lh
         cd ..
+        BWT=\$(find "genome_index" -name '*.bwt')
+        GENOME_INDEX_FA=\$(dirname "\${BWT}")/\$(basename "\${BWT}" .bwt)
     fi
-
-        # Get genome index name
-    BWT=`find "\$outdir" -name '*.bwt'`
-    GENOME_INDEX_FA=`dirname "\$BWT"`/`basename "\$BWT" .bwt`
-    echo "Using bwa index: \$GENOME_INDEX_FA"
+    echo "Using BWA index: \$GENOME_INDEX_FA"
     PARSE_NPROC=\$(( ${bwa_cores} / 2 ))
     bwa mem -5SP -T0 -t${bwa_cores} \$GENOME_INDEX_FA ${fastq_r1} ${fastq_r2} | \
     pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
