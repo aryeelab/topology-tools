@@ -1,0 +1,29 @@
+name: microc-pipeline
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # Python and core packages
+  - python=3.9
+  - pip
+
+  # Core bioinformatics tools for Nextflow pipeline
+  - bwa>=0.7.17                   # BWA aligner (use latest available)
+  - pairtools>=1.0.2              # Hi-C pairs processing
+  - samtools>=1.15                # SAM/BAM file processing
+  - cooler>=0.9.1                 # Contact matrix generation
+
+  # Java for juicer tools
+  - openjdk=11
+
+  # System utilities needed by QC module
+  - bc                            # Calculator for QC percentages
+  - coreutils                     # grep, cut, awk, etc.
+
+  # Performance monitoring and analysis
+  - pandas
+  - numpy
+  - matplotlib
+
+  - pip:
+    - memory-profiler
