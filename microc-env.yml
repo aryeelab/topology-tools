@@ -91,6 +91,8 @@ dependencies:
   - zstd=1.5.6=ha6fb4c9_0
   - pip:
     - numpy==1.23.5
+    - pandas
+    - polars
 # To recreate:
 #   conda env create -f microc-env.yml
 # Note: numpy is pinned to 1.23.5 via pip because pairtools 0.3.0 uses

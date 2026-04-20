@@ -182,3 +182,16 @@ def test_parse_bam_file_counts_reads_not_pairs():
     assert metrics["read_length"] == 101
     assert metrics["total_reads"] == 44220
     assert metrics["unique_reads"] == 43776
+
+
+def test_parse_pairs_file_python_fallback_matches():
+    """Pure-Python path must produce identical output to the fast paths."""
+    pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
+    columns, _ = microc_qc._parse_pairs_header(pairs_path)
+    python_metrics = microc_qc._parse_pairs_python(pairs_path, columns, 10_000, False)
+
+    assert python_metrics["read_length"] == 101
+    assert python_metrics["non_dup_reads"] == 22110
+    assert python_metrics["cis_long_range_pairs"] == 8379
+    assert python_metrics["fragment_count"] == 44220
+    assert python_metrics["fragment_length_distribution"][101] == 27300
