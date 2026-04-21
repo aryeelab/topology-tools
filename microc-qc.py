@@ -208,39 +208,80 @@ def _parse_pairs_polars(
             schema_overrides=schema_ov,
         )
 
+    def _scan():
+        return pl.scan_csv(**_read_csv_kwargs(str(path))).select(needed)
+
     if sample_size is not None:
         # Two lazy scan_csv passes — polars streams in batches so peak memory is
         # O(batch_size + sample_size), never proportional to the full file size.
         # Pass 1: exact row count (streaming, ~1s regardless of file size).
         if progress:
             _progress("  pairs: counting rows...")
-        total_rows = (
-            pl.scan_csv(**_read_csv_kwargs(str(path)))
-            .select(pl.len())
-            .collect()
-            .item()
-        )
+        total_rows = _scan().select(pl.len()).collect(streaming=True).item()
         stride = max(1, total_rows // sample_size)
 
         # Pass 2: stream the file, keep every stride-th row.
         if progress:
             _progress(f"  pairs: {total_rows:,} reads — reading 1/{stride} sample...")
-        df = (
-            pl.scan_csv(**_read_csv_kwargs(str(path)))
-            .select(needed)
-            .gather_every(stride)
-            .collect()
-        )
+        df = _scan().gather_every(stride).collect()
         scale = total_rows / max(len(df), 1)
-    else:
-        # No sampling: load full file (fast when file fits in RAM).
-        if progress:
-            _progress("  pairs: reading...")
-        df = pl.read_csv(**_read_csv_kwargs(str(path))).select(needed)
-        total_rows = len(df)
-        scale = 1.0
 
-    return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress)
+        return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress)
+
+    else:
+        # No sampling — two streaming scans: peak memory is O(unique_values),
+        # never proportional to the full file size, so any file fits.
+        if progress:
+            _progress("  pairs: computing metrics (streaming pass 1/2)...")
+
+        # Scan 1: scalar aggregations (total rows + cis long-range count).
+        scalars = _scan().select([
+            pl.len().alias("total_rows"),
+            ((pl.col("chrom1") == pl.col("chrom2")) &
+             ((pl.col("pos2") - pl.col("pos1")).abs() >= cis_distance)
+             ).sum().alias("cis_lr"),
+        ]).collect(streaming=True)
+        total_rows = int(scalars["total_rows"][0])
+        cis_lr = int(scalars["cis_lr"][0])
+
+        if progress:
+            _progress(f"  pairs: {total_rows:,} reads — computing distributions (pass 2/2)...")
+
+        # Scan 2: fragment-length and read-length distributions via group_by.
+        dists = (
+            _scan().select([
+                ((pl.col("pos31") - pl.col("pos51")).abs() + 1).cast(pl.Int32).alias("frag1"),
+                ((pl.col("pos32") - pl.col("pos52")).abs() + 1).cast(pl.Int32).alias("frag2"),
+                pl.col("read_len1").alias("rl1"),
+                pl.col("read_len2").alias("rl2"),
+            ])
+            .unpivot(on=["frag1", "frag2", "rl1", "rl2"], variable_name="kind", value_name="val")
+            .filter(pl.col("val") > 0)
+            .group_by(["kind", "val"]).agg(pl.len().alias("count"))
+            .collect(streaming=True)
+        )
+
+        frag_df = (dists.filter(pl.col("kind").str.starts_with("frag"))
+                   .group_by("val").agg(pl.col("count").sum()).sort("val"))
+        rl_df = (dists.filter(pl.col("kind").str.starts_with("rl"))
+                 .group_by("val").agg(pl.col("count").sum()).sort("val"))
+
+        fragment_lengths = dict(zip(frag_df["val"].to_list(), frag_df["count"].to_list()))
+        read_lengths: Counter[int] = Counter(
+            dict(zip(rl_df["val"].to_list(), rl_df["count"].to_list()))
+        )
+
+        if progress:
+            _progress(f"  pairs: {total_rows:,} reads (100%)", end="\n")
+
+        return {
+            "non_dup_reads": total_rows,
+            "cis_long_range_pairs": cis_lr,
+            "read_length": infer_consensus_read_length(read_lengths),
+            "read_length_distribution": dict(sorted(read_lengths.items())),
+            "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+            "fragment_count": 2 * total_rows,
+        }
 
 
 def _parse_pairs_pandas(
