@@ -25,9 +25,8 @@ except ImportError:
     _PANDAS_AVAILABLE = False
 
 _PROGRESS_INTERVAL = 500_000
-_DEFAULT_SAMPLE_SIZE = 5_000_000  # empirically determined: see tests/convergence_analysis.py
-# On 68M-row chr19 Micro-C data: metrics stable at 250k (< 0.5% change when doubling N);
-# 5M chosen as default — aggregation cost is negligible vs I/O and gives tighter estimates.
+_DEFAULT_SAMPLE_SIZE = 0  # 0 = exact (no sampling); streaming aggregations make exact as
+# fast and memory-efficient as sampling, so there is no longer a speed/accuracy tradeoff.
 
 
 def _progress(msg: str, end: str = "") -> None:
@@ -772,9 +771,9 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         default=_DEFAULT_SAMPLE_SIZE,
         metavar="N",
         help=(
-            "Stride-sample N read pairs from each pairs file for rate and distribution "
-            "metrics. non_dup_reads is always exact (full file count). "
-            f"Default: {_DEFAULT_SAMPLE_SIZE:,}. Set to 0 to read every row."
+            "Stride-sample N read pairs from each pairs file for approximate rate and "
+            "distribution metrics. Default: 0 (exact — streaming aggregations make "
+            "exact as fast and memory-efficient as sampling for any file size)."
         ),
     )
     parser.add_argument(
