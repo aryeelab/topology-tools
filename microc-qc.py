@@ -62,22 +62,57 @@ def _pairs_progress_pct(handle: TextIO, file_size: int) -> str:
 
 
 def _count_data_lines(path: Path) -> int:
-    """Count non-comment data lines via fast binary byte scan (no per-row parsing)."""
-    comment_byte = ord("#")
-    newline_byte = ord("\n")
-    count = 0
-    prev_newline = True  # treat start-of-file as if preceded by a newline
+    """Count non-comment data lines using fast chunked binary reads."""
     opener = gzip.open if str(path).endswith(".gz") else open
+    count = 0
+    buf = b""
     with opener(path, "rb") as fh:
         while True:
-            chunk = fh.read(1 << 20)  # 1 MB chunks
+            chunk = fh.read(64 << 20)  # 64 MB chunks
             if not chunk:
                 break
-            for b in chunk:
-                if prev_newline and b != comment_byte:
+            lines = (buf + chunk).split(b"\n")
+            buf = lines.pop()  # last partial line (no trailing newline yet)
+            for line in lines:
+                if line and line[0:1] != b"#":
                     count += 1
-                prev_newline = b == newline_byte
+    if buf and buf[0:1] != b"#":
+        count += 1
     return count
+
+
+def _collect_stride_lines(path: Path, stride: int, progress: bool) -> bytes:
+    """Read every stride-th data line; return as concatenated bytes for polars.
+
+    Uses 64 MB binary chunks + C-level split() so Python only loops over the
+    resulting list — much faster than line-by-line iteration.  Memory is
+    O(sample_size * bytes_per_row), never proportional to the full file size.
+    """
+    opener = gzip.open if str(path).endswith(".gz") else open
+    buf = b""
+    data_line = 0
+    sampled: list[bytes] = []
+    with opener(path, "rb") as fh:
+        while True:
+            chunk = fh.read(64 << 20)
+            if not chunk:
+                break
+            lines = (buf + chunk).split(b"\n")
+            buf = lines.pop()
+            for line in lines:
+                if not line or line[0:1] == b"#":
+                    continue
+                data_line += 1
+                if progress and data_line % _PROGRESS_INTERVAL == 0:
+                    _progress(f"  pairs: {data_line:,} reads")
+                if data_line % stride == 0:
+                    sampled.append(line + b"\n")
+    # handle last partial line (file not ending in '\n')
+    if buf and buf[0:1] != b"#":
+        data_line += 1
+        if data_line % stride == 0:
+            sampled.append(buf + b"\n")
+    return b"".join(sampled)
 
 
 def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
@@ -102,35 +137,10 @@ def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
     return columns, required_columns
 
 
-def _parse_pairs_polars(
-    path: Path, columns: list[str], cis_distance: int, progress: bool,
-    sample_size: int | None = None,
+def _polars_metrics_from_df(
+    df, total_rows: int, scale: float, cis_distance: int, progress: bool
 ) -> dict:
-    """Fastest path: parse pairs file using polars (SIMD-accelerated CSV reader)."""
-    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
-              "pos51", "pos52", "pos31", "pos32"]
-    int32_cols = [c for c in needed if c not in ("chrom1", "chrom2")]
-
-    if progress:
-        _progress("  pairs: reading...")
-
-    df = pl.read_csv(
-        str(path),
-        separator="\t",
-        comment_prefix="#",
-        has_header=False,
-        new_columns=columns,
-        schema_overrides={c: pl.Int32 for c in int32_cols},
-    ).select(needed)
-
-    total_rows = len(df)
-
-    if sample_size is not None and total_rows > sample_size:
-        stride = max(1, total_rows // sample_size)
-        df = df.gather_every(stride)
-
-    scale = total_rows / len(df)
-
+    """Compute QC metrics from an already-loaded (possibly sampled) polars DataFrame."""
     if progress:
         label = f" (1/{round(scale)}× sample)" if scale > 1.5 else ""
         _progress(f"  pairs: {total_rows:,} reads — aggregating{label}...")
@@ -144,11 +154,10 @@ def _parse_pairs_polars(
     frag2 = (df["pos32"] - df["pos52"]).abs() + 1
     frag_series = pl.concat([frag1.rename("fl"), frag2.rename("fl")])
     frag_vc = frag_series.value_counts().sort("fl")
-    raw_fragment_lengths = dict(zip(frag_vc["fl"].to_list(), frag_vc["count"].to_list()))
-    if scale > 1.0:
-        fragment_lengths = {k: int(round(v * scale)) for k, v in raw_fragment_lengths.items()}
-    else:
-        fragment_lengths = raw_fragment_lengths
+    raw_fl = dict(zip(frag_vc["fl"].to_list(), frag_vc["count"].to_list()))
+    fragment_lengths = (
+        {k: int(round(v * scale)) for k, v in raw_fl.items()} if scale > 1.0 else raw_fl
+    )
 
     rl1 = df["read_len1"].filter(df["read_len1"] > 0)
     rl2 = df["read_len2"].filter(df["read_len2"] > 0)
@@ -169,6 +178,69 @@ def _parse_pairs_polars(
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
         "fragment_count": 2 * total_rows,
     }
+
+
+def _parse_pairs_polars(
+    path: Path, columns: list[str], cis_distance: int, progress: bool,
+    sample_size: int | None = None,
+) -> dict:
+    """Fastest path: parse pairs file using polars (SIMD-accelerated CSV reader).
+
+    When sample_size is set, uses a two-pass approach (binary line count +
+    stride read into a small buffer) so memory usage is O(sample_size), never
+    proportional to the full file size.  Without sampling, the full file is
+    loaded into a polars DataFrame — suitable when it fits in RAM.
+    """
+    import io as _io
+
+    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
+              "pos51", "pos52", "pos31", "pos32"]
+    int32_cols = [c for c in needed if c not in ("chrom1", "chrom2")]
+    schema_ov = {c: pl.Int32 for c in int32_cols}
+
+    def _read_csv_kwargs(source):
+        return dict(
+            source=source,
+            separator="\t",
+            comment_prefix="#",
+            has_header=False,
+            new_columns=columns,
+            schema_overrides=schema_ov,
+        )
+
+    if sample_size is not None:
+        # Two lazy scan_csv passes — polars streams in batches so peak memory is
+        # O(batch_size + sample_size), never proportional to the full file size.
+        # Pass 1: exact row count (streaming, ~1s regardless of file size).
+        if progress:
+            _progress("  pairs: counting rows...")
+        total_rows = (
+            pl.scan_csv(**_read_csv_kwargs(str(path)))
+            .select(pl.len())
+            .collect()
+            .item()
+        )
+        stride = max(1, total_rows // sample_size)
+
+        # Pass 2: stream the file, keep every stride-th row.
+        if progress:
+            _progress(f"  pairs: {total_rows:,} reads — reading 1/{stride} sample...")
+        df = (
+            pl.scan_csv(**_read_csv_kwargs(str(path)))
+            .select(needed)
+            .gather_every(stride)
+            .collect()
+        )
+        scale = total_rows / max(len(df), 1)
+    else:
+        # No sampling: load full file (fast when file fits in RAM).
+        if progress:
+            _progress("  pairs: reading...")
+        df = pl.read_csv(**_read_csv_kwargs(str(path))).select(needed)
+        total_rows = len(df)
+        scale = 1.0
+
+    return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress)
 
 
 def _parse_pairs_pandas(
