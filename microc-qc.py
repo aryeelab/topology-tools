@@ -25,9 +25,9 @@ except ImportError:
     _PANDAS_AVAILABLE = False
 
 _PROGRESS_INTERVAL = 500_000
-_DEFAULT_SAMPLE_SIZE = 500_000   # empirically determined: see tests/convergence_analysis.py
-# On 68M-row chr19 Micro-C data: cis_rate and fragment distribution stable at 250k
-# (< 0.5% change when doubling N); 500k chosen as conservative default with margin.
+_DEFAULT_SAMPLE_SIZE = 5_000_000  # empirically determined: see tests/convergence_analysis.py
+# On 68M-row chr19 Micro-C data: metrics stable at 250k (< 0.5% change when doubling N);
+# 5M chosen as default — aggregation cost is negligible vs I/O and gives tighter estimates.
 
 
 def _progress(msg: str, end: str = "") -> None:
