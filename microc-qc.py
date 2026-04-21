@@ -25,6 +25,7 @@ except ImportError:
     _PANDAS_AVAILABLE = False
 
 _PROGRESS_INTERVAL = 500_000
+_DEFAULT_SAMPLE_SIZE = 500_000   # updated after convergence_analysis.py is run
 
 
 def _progress(msg: str, end: str = "") -> None:
@@ -58,6 +59,25 @@ def _pairs_progress_pct(handle: TextIO, file_size: int) -> str:
     return ""
 
 
+def _count_data_lines(path: Path) -> int:
+    """Count non-comment data lines via fast binary byte scan (no per-row parsing)."""
+    comment_byte = ord("#")
+    newline_byte = ord("\n")
+    count = 0
+    prev_newline = True  # treat start-of-file as if preceded by a newline
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rb") as fh:
+        while True:
+            chunk = fh.read(1 << 20)  # 1 MB chunks
+            if not chunk:
+                break
+            for b in chunk:
+                if prev_newline and b != comment_byte:
+                    count += 1
+                prev_newline = b == newline_byte
+    return count
+
+
 def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
     """Read comment lines and return (column_names, required_columns_present)."""
     required_columns = {
@@ -81,7 +101,8 @@ def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
 
 
 def _parse_pairs_polars(
-    path: Path, columns: list[str], cis_distance: int, progress: bool
+    path: Path, columns: list[str], cis_distance: int, progress: bool,
+    sample_size: int | None = None,
 ) -> dict:
     """Fastest path: parse pairs file using polars (SIMD-accelerated CSV reader)."""
     needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
@@ -100,21 +121,32 @@ def _parse_pairs_polars(
         schema_overrides={c: pl.Int32 for c in int32_cols},
     ).select(needed)
 
-    non_dup_reads = len(df)
+    total_rows = len(df)
+
+    if sample_size is not None and total_rows > sample_size:
+        stride = max(1, total_rows // sample_size)
+        df = df.gather_every(stride)
+
+    scale = total_rows / len(df)
 
     if progress:
-        _progress(f"  pairs: {non_dup_reads:,} reads — aggregating...")
+        label = f" (1/{round(scale)}× sample)" if scale > 1.5 else ""
+        _progress(f"  pairs: {total_rows:,} reads — aggregating{label}...")
 
-    cis_lr = int(
+    cis_lr = int(round(
         ((df["chrom1"] == df["chrom2"]) &
-         ((df["pos2"] - df["pos1"]).abs() >= cis_distance)).sum()
-    )
+         ((df["pos2"] - df["pos1"]).abs() >= cis_distance)).sum() * scale
+    ))
 
     frag1 = (df["pos31"] - df["pos51"]).abs() + 1
     frag2 = (df["pos32"] - df["pos52"]).abs() + 1
     frag_series = pl.concat([frag1.rename("fl"), frag2.rename("fl")])
     frag_vc = frag_series.value_counts().sort("fl")
-    fragment_lengths = dict(zip(frag_vc["fl"].to_list(), frag_vc["count"].to_list()))
+    raw_fragment_lengths = dict(zip(frag_vc["fl"].to_list(), frag_vc["count"].to_list()))
+    if scale > 1.0:
+        fragment_lengths = {k: int(round(v * scale)) for k, v in raw_fragment_lengths.items()}
+    else:
+        fragment_lengths = raw_fragment_lengths
 
     rl1 = df["read_len1"].filter(df["read_len1"] > 0)
     rl2 = df["read_len2"].filter(df["read_len2"] > 0)
@@ -125,26 +157,35 @@ def _parse_pairs_polars(
     )
 
     if progress:
-        _progress(f"  pairs: {non_dup_reads:,} reads (100%)", end="\n")
+        _progress(f"  pairs: {total_rows:,} reads (100%)", end="\n")
 
     return {
-        "non_dup_reads": non_dup_reads,
+        "non_dup_reads": total_rows,
         "cis_long_range_pairs": cis_lr,
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
-        "fragment_count": sum(fragment_lengths.values()),
+        "fragment_count": 2 * total_rows,
     }
 
 
 def _parse_pairs_pandas(
-    path: Path, columns: list[str], cis_distance: int, progress: bool
+    path: Path, columns: list[str], cis_distance: int, progress: bool,
+    sample_size: int | None = None,
 ) -> dict:
     """Fast path: parse pairs file using chunked pandas read_csv."""
     needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
               "pos51", "pos52", "pos31", "pos32"]
 
-    non_dup_reads = 0
+    # Pre-count for exact non_dup_reads and stride computation when sampling
+    total_rows: int | None = None
+    stride = 1
+    if sample_size is not None:
+        total_rows = _count_data_lines(path)
+        stride = max(1, total_rows // sample_size)
+
+    base_row = 0       # global data-row index (before any filtering)
+    sampled_rows = 0   # rows actually accumulated for statistics
     cis_long_range_pairs = 0
     fragment_lengths: Counter[int] = Counter()
     read_lengths: Counter[int] = Counter()
@@ -167,12 +208,20 @@ def _parse_pairs_pandas(
 
     prev_milestone = 0
     for chunk in chunks:
-        non_dup_reads += len(chunk)
+        chunk_len = len(chunk)
 
+        if stride > 1:
+            keep = [i for i in range(chunk_len) if (base_row + i) % stride == 0]
+            chunk = chunk.iloc[keep]
+
+        base_row += chunk_len
+        sampled_rows += len(chunk)
+
+        rows_seen = total_rows if total_rows is not None else base_row
         if progress:
-            milestone = (non_dup_reads // _PROGRESS_INTERVAL) * _PROGRESS_INTERVAL
+            milestone = (rows_seen // _PROGRESS_INTERVAL) * _PROGRESS_INTERVAL
             if milestone > prev_milestone:
-                _progress(f"  pairs: {non_dup_reads:,} reads")
+                _progress(f"  pairs: {rows_seen:,} reads")
                 prev_milestone = milestone
 
         cis = chunk.chrom1 == chunk.chrom2
@@ -190,8 +239,15 @@ def _parse_pairs_pandas(
         for length, count in pd.concat([frag1, frag2]).value_counts().items():
             fragment_lengths[int(length)] += int(count)
 
+    non_dup_reads = total_rows if total_rows is not None else base_row
+    scale = non_dup_reads / sampled_rows if sampled_rows < non_dup_reads else 1.0
+
     if progress:
         _progress(f"  pairs: {non_dup_reads:,} reads (100%)", end="\n")
+
+    if scale > 1.0:
+        cis_long_range_pairs = int(round(cis_long_range_pairs * scale))
+        fragment_lengths = Counter({k: int(round(v * scale)) for k, v in fragment_lengths.items()})
 
     return {
         "non_dup_reads": non_dup_reads,
@@ -199,12 +255,13 @@ def _parse_pairs_pandas(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
-        "fragment_count": sum(fragment_lengths.values()),
+        "fragment_count": 2 * non_dup_reads,
     }
 
 
 def _parse_pairs_python(
-    path: Path, columns: list[str], cis_distance: int, progress: bool
+    path: Path, columns: list[str], cis_distance: int, progress: bool,
+    sample_size: int | None = None,
 ) -> dict:
     """Pure-Python fallback for parse_pairs_file (used when pandas is unavailable)."""
     column_index = {name: idx for idx, name in enumerate(columns)}
@@ -212,7 +269,14 @@ def _parse_pairs_python(
           ("chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
            "pos51", "pos52", "pos31", "pos32")}
 
-    non_dup_reads = 0
+    # Pre-count for exact total and stride computation when sampling
+    total_rows: int | None = None
+    stride = 1
+    if sample_size is not None:
+        total_rows = _count_data_lines(path)
+        stride = max(1, total_rows // sample_size)
+
+    data_line = 0  # global data-line counter (always incremented)
     cis_long_range_pairs = 0
     fragment_lengths: Counter[int] = Counter()
     read_lengths: Counter[int] = Counter()
@@ -223,11 +287,17 @@ def _parse_pairs_python(
             if raw_line.startswith("#"):
                 continue
 
-            fields = raw_line.rstrip("\n").split("\t")
-            non_dup_reads += 1
-            if progress and non_dup_reads % _PROGRESS_INTERVAL == 0:
+            data_line += 1
+
+            if progress and data_line % _PROGRESS_INTERVAL == 0:
                 pct = _pairs_progress_pct(handle, file_size)
-                _progress(f"  pairs: {non_dup_reads:,} reads{pct}")
+                _progress(f"  pairs: {data_line:,} reads{pct}")
+
+            # Skip non-sampled rows (stride == 1 means keep all)
+            if data_line % stride != 0:
+                continue
+
+            fields = raw_line.rstrip("\n").split("\t")
 
             chrom1 = fields[ci["chrom1"]]
             chrom2 = fields[ci["chrom2"]]
@@ -250,8 +320,16 @@ def _parse_pairs_python(
             fragment_lengths[abs(pos31 - pos51) + 1] += 1
             fragment_lengths[abs(pos32 - pos52) + 1] += 1
 
+    non_dup_reads = total_rows if total_rows is not None else data_line
+    sampled = data_line // stride  # number of rows actually processed
+    scale = non_dup_reads / sampled if sampled < non_dup_reads else 1.0
+
     if progress:
         _progress(f"  pairs: {non_dup_reads:,} reads (100%)", end="\n")
+
+    if scale > 1.0:
+        cis_long_range_pairs = int(round(cis_long_range_pairs * scale))
+        fragment_lengths = Counter({k: int(round(v * scale)) for k, v in fragment_lengths.items()})
 
     return {
         "non_dup_reads": non_dup_reads,
@@ -259,24 +337,35 @@ def _parse_pairs_python(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
-        "fragment_count": sum(fragment_lengths.values()),
+        "fragment_count": 2 * non_dup_reads,
     }
 
 
-def parse_pairs_file(path: Path, cis_distance: int = 10_000, progress: bool = True) -> dict:
+def parse_pairs_file(
+    path: Path,
+    cis_distance: int = 10_000,
+    progress: bool = True,
+    sample_size: int | None = None,
+) -> dict:
     """Parse a pairs/pairsam file and compute QC metrics.
 
     Uses the fastest available library:
       polars  (install: pip install polars)  — ~30× vs pure Python
       pandas  (install: pip install pandas)  — ~4× vs pure Python
       pure Python                            — always available, no extra deps
+
+    When sample_size is set, non_dup_reads is always exact (full file count) while
+    rate/distribution metrics are estimated from a stride sample of sample_size reads.
+    Set sample_size=0 to disable sampling and read every row.
     """
+    if sample_size == 0:
+        sample_size = None
     columns, _ = _parse_pairs_header(path)
     if _POLARS_AVAILABLE:
-        return _parse_pairs_polars(path, columns, cis_distance, progress)
+        return _parse_pairs_polars(path, columns, cis_distance, progress, sample_size)
     if _PANDAS_AVAILABLE:
-        return _parse_pairs_pandas(path, columns, cis_distance, progress)
-    return _parse_pairs_python(path, columns, cis_distance, progress)
+        return _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size)
+    return _parse_pairs_python(path, columns, cis_distance, progress, sample_size)
 
 
 def is_unique_alignment(record, unique_mapq_min: int) -> bool:
@@ -418,6 +507,7 @@ def build_summary(
     cis_distance: int,
     pairs_path: Path,
     bam_path: Path | None,
+    sample_size: int | None = None,
 ) -> dict:
     """Assemble the final QC summary document."""
     read_length = pairs_metrics["read_length"]
@@ -425,6 +515,21 @@ def build_summary(
     if bam_metrics and bam_metrics.get("read_length") is not None:
         read_length = bam_metrics["read_length"]
         read_length_source = "bam"
+
+    sources: dict = {
+        "read_length": read_length_source,
+        "total_reads": "bam",
+        "unique_reads": (
+            f"bam(primary reads; NH==1 when present, else MAPQ>={bam_metrics['unique_mapq_min']})"
+        ),
+        "non_dup_reads": "pairs(exact line count)",
+        "cis_long_range_pairs": f"pairs(same chromosome and distance >= {cis_distance})",
+        "fragment_length_distribution": "pairs(abs(pos31-pos51)+1, abs(pos32-pos52)+1)",
+    }
+    if sample_size:
+        sources["sampling"] = (
+            f"stride sample of {sample_size:,} from {pairs_metrics['non_dup_reads']:,} reads"
+        )
 
     return {
         "sample_id": sample_id,
@@ -440,16 +545,7 @@ def build_summary(
             "cis_long_range_pairs": pairs_metrics["cis_long_range_pairs"],
         },
         "fragment_length_distribution": pairs_metrics["fragment_length_distribution"],
-        "sources": {
-            "read_length": read_length_source,
-            "total_reads": "bam",
-            "unique_reads": (
-                f"bam(primary reads; NH==1 when present, else MAPQ>={bam_metrics['unique_mapq_min']})"
-            ),
-            "non_dup_reads": "pairs(lines)",
-            "cis_long_range_pairs": f"pairs(same chromosome and distance >= {cis_distance})",
-            "fragment_length_distribution": "pairs(abs(pos31-pos51)+1, abs(pos32-pos52)+1)",
-        },
+        "sources": sources,
     }
 
 
@@ -459,6 +555,7 @@ def build_batch_summary(
     bam_paths: list[Path],
     cis_distance: int,
     unique_mapq_min: int,
+    sample_size: int | None = None,
 ) -> dict:
     """Assemble per-sample summaries for a batch run."""
     n = len(sample_ids)
@@ -468,7 +565,9 @@ def build_batch_summary(
         zip(sample_ids, pairs_paths, bam_paths), start=1
     ):
         print(f"[{i}/{n}] {sample_id}", file=sys.stderr)
-        pairs_metrics = parse_pairs_file(pairs_path, cis_distance=cis_distance)
+        pairs_metrics = parse_pairs_file(
+            pairs_path, cis_distance=cis_distance, sample_size=sample_size
+        )
         bam_metrics = parse_bam_file(bam_path, unique_mapq_min=unique_mapq_min)
         samples.append(
             build_summary(
@@ -478,6 +577,7 @@ def build_batch_summary(
                 cis_distance=cis_distance,
                 pairs_path=pairs_path,
                 bam_path=bam_path,
+                sample_size=sample_size,
             )
         )
     return {"samples": samples}
@@ -552,6 +652,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=_DEFAULT_SAMPLE_SIZE,
+        metavar="N",
+        help=(
+            "Stride-sample N read pairs from each pairs file for rate and distribution "
+            "metrics. non_dup_reads is always exact (full file count). "
+            f"Default: {_DEFAULT_SAMPLE_SIZE:,}. Set to 0 to read every row."
+        ),
+    )
+    parser.add_argument(
         "--indent",
         type=int,
         default=2,
@@ -590,6 +701,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         bam_paths=bam_paths,
         cis_distance=args.cis_distance,
         unique_mapq_min=args.unique_mapq_min,
+        sample_size=args.sample_size if args.sample_size != 0 else None,
     )
 
     write_sample_summaries(summary["samples"], args.out)

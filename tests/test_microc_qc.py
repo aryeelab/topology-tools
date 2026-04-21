@@ -60,7 +60,7 @@ def test_build_batch_summary_wraps_samples():
     original_parse_bam = microc_qc.parse_bam_file
 
     try:
-        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000: {
+        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000, sample_size=None: {
             "non_dup_reads": 10,
             "cis_long_range_pairs": 4,
             "read_length": 101,
@@ -195,3 +195,25 @@ def test_parse_pairs_file_python_fallback_matches():
     assert python_metrics["cis_long_range_pairs"] == 8379
     assert python_metrics["fragment_count"] == 44220
     assert python_metrics["fragment_length_distribution"][101] == 27300
+
+
+def test_parse_pairs_file_sampling_exact_count_and_close_rate():
+    """Stride sampling must return exact non_dup_reads and a close cis-LR rate."""
+    pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
+
+    # small-rcmc has 22110 rows; sample_size=1000 → stride≈22, ~1005 rows sampled
+    metrics = microc_qc.parse_pairs_file(pairs_path, sample_size=1_000, progress=False)
+
+    # Exact count must be preserved regardless of sampling
+    assert metrics["non_dup_reads"] == 22110
+    assert metrics["fragment_count"] == 2 * 22110
+
+    # Rate metrics may differ from the full-file value, but should be within 20%
+    full_cis_lr = 8379
+    assert abs(metrics["cis_long_range_pairs"] - full_cis_lr) / full_cis_lr < 0.20
+
+
+def test_count_data_lines():
+    """_count_data_lines must match the actual row count of the pairs file."""
+    pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
+    assert microc_qc._count_data_lines(pairs_path) == 22110
