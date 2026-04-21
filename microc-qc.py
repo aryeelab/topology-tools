@@ -162,7 +162,6 @@ def _parse_pairs_pandas(
             "pos51": "int32", "pos52": "int32",
             "pos31": "int32", "pos32": "int32",
             "read_len1": "int16", "read_len2": "int16",
-            "chrom1": "category", "chrom2": "category",
         },
     )
 
