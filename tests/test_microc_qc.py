@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "microc-qc.py"
@@ -12,7 +14,14 @@ microc_qc = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(microc_qc)
 
+FIXTURE_DIR = REPO_ROOT / "test-output"
+needs_fixtures = pytest.mark.skipif(
+    not (FIXTURE_DIR / "small-rcmc.mapped.pairs").exists(),
+    reason="test-output/small-rcmc fixtures not present",
+)
 
+
+@needs_fixtures
 def test_parse_pairs_file_small_rcmc():
     pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
     metrics = microc_qc.parse_pairs_file(pairs_path)
@@ -24,6 +33,7 @@ def test_parse_pairs_file_small_rcmc():
     assert metrics["fragment_length_distribution"][101] == 27300
 
 
+@needs_fixtures
 def test_build_summary_single_sample_shape():
     pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
     bam_path = REPO_ROOT / "test-output" / "small-rcmc.bam"
@@ -37,14 +47,16 @@ def test_build_summary_single_sample_shape():
             "total_reads": 44220,
             "unique_mapq_min": 20,
         },
+        stats_metrics=None,
         cis_distance=10_000,
         pairs_path=pairs_path,
         bam_path=bam_path,
+        stats_path=None,
     )
 
     assert summary["sample_id"] == "small-rcmc"
     assert summary["metrics"]["read_length"] == 101
-    assert summary["metrics"]["total_reads"] == 44220
+    assert summary["metrics"]["total_reads"] is None  # exact totals now come from --stats
     assert summary["metrics"]["unique_reads"] == 43776
     assert summary["metrics"]["non_dup_reads"] == 22110
     assert summary["metrics"]["cis_long_range_pairs"] == 8379
@@ -67,7 +79,7 @@ def test_build_batch_summary_wraps_samples():
             "fragment_length_distribution": {101: 20},
             "fragment_count": 20,
         }
-        microc_qc.parse_bam_file = lambda path, unique_mapq_min=20: {
+        microc_qc.parse_bam_file = lambda path, unique_mapq_min=20, progress=True: {
             "total_reads": 20,
             "unique_reads": 18,
             "read_length": 101,
@@ -79,6 +91,7 @@ def test_build_batch_summary_wraps_samples():
             sample_ids=["sample-a", "sample-b"],
             pairs_paths=[pairs_path, pairs_path],
             bam_paths=[bam_path, bam_path],
+            stats_paths=[None, None],
             cis_distance=10_000,
             unique_mapq_min=20,
         )
@@ -148,6 +161,7 @@ def test_write_sample_summaries_directory(tmp_path):
     assert (tmp_path / "summaries" / "sample-b.qc.json").exists()
 
 
+@needs_fixtures
 def test_discover_samples_finds_matching_pairs_and_bams():
     sample_ids, pairs_paths, bam_paths = microc_qc.discover_samples(REPO_ROOT / "test-output")
 
@@ -171,6 +185,7 @@ def test_discover_samples_searches_subdirectories(tmp_path):
     assert bam_paths == [bam_path]
 
 
+@needs_fixtures
 def test_parse_bam_file_counts_reads_not_pairs():
     bam_path = REPO_ROOT / "test-output" / "small-rcmc.bam"
 
@@ -180,10 +195,12 @@ def test_parse_bam_file_counts_reads_not_pairs():
         return
 
     assert metrics["read_length"] == 101
-    assert metrics["total_reads"] == 44220
-    assert metrics["unique_reads"] == 43776
+    assert metrics["total_reads"] is None
+    assert metrics["unique_fraction_sample_size"] == 44220  # fixture is smaller than the sample cap
+    assert metrics["unique_fraction"] == pytest.approx(43776 / 44220)
 
 
+@needs_fixtures
 def test_parse_pairs_file_python_fallback_matches():
     """Pure-Python path must produce identical output to the fast paths."""
     pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
@@ -197,6 +214,7 @@ def test_parse_pairs_file_python_fallback_matches():
     assert python_metrics["fragment_length_distribution"][101] == 27300
 
 
+@needs_fixtures
 def test_parse_pairs_file_sampling_exact_count_and_close_rate():
     """Stride sampling must return exact non_dup_reads and a close cis-LR rate."""
     pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
@@ -213,7 +231,43 @@ def test_parse_pairs_file_sampling_exact_count_and_close_rate():
     assert abs(metrics["cis_long_range_pairs"] - full_cis_lr) / full_cis_lr < 0.20
 
 
+@needs_fixtures
 def test_count_data_lines():
     """_count_data_lines must match the actual row count of the pairs file."""
     pairs_path = REPO_ROOT / "test-output" / "small-rcmc.mapped.pairs"
     assert microc_qc._count_data_lines(pairs_path) == 22110
+
+
+def test_parse_stats_file(tmp_path):
+    stats = tmp_path / "s.stats.txt"
+    stats.write_text("total\t1000\ntotal_mapped\t800\ntotal_dups\t80\ntotal_nodups\t720\n"
+                     "chrom_freq/chr1/chr1\t5\nsummary/frac_cis\t0.5\n")
+    m = microc_qc.parse_stats_file(stats)
+    assert m["total_reads"] == 1000 and m["total_mapped"] == 800
+    assert m["mapping_rate"] == pytest.approx(0.8)
+    assert m["duplication_rate"] == pytest.approx(0.1)
+
+
+def test_discover_stats_matches_sample_ids(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "s1.stats.txt").write_text("total\t1\n")
+    assert microc_qc.discover_stats(tmp_path, ["s1", "s2"]) == [tmp_path / "a" / "s1.stats.txt", None]
+
+
+def test_build_summary_with_stats_and_bam_sample():
+    summary = microc_qc.build_summary(
+        sample_id="x",
+        pairs_metrics={"non_dup_reads": 10, "cis_long_range_pairs": 4, "read_length": 150,
+                       "fragment_length_distribution": {150: 20}, "fragment_count": 20},
+        bam_metrics={"total_reads": None, "unique_reads": None, "unique_fraction": 0.9,
+                     "read_length": 150, "unique_mapq_min": 20, "unique_fraction_sample_size": 500000},
+        stats_metrics={"total_reads": 100, "total_mapped": 80, "total_dups": 8, "total_nodups": 72,
+                       "mapping_rate": 0.8, "duplication_rate": 0.1},
+        cis_distance=10_000, pairs_path=Path("x.pairs"), bam_path=Path("x.bam"),
+        stats_path=Path("x.stats.txt"),
+    )
+    assert summary["metrics"]["total_reads"] == 100
+    assert summary["metrics"]["unique_fraction"] == 0.9
+    assert summary["metrics"]["unique_reads"] is None
+    assert summary["precision"]["unique_fraction"] == "estimate"
+    assert "first 500,000 primary reads" in summary["sources"]["unique_fraction"]

@@ -9,6 +9,7 @@ import gzip
 import json
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterable, TextIO
 
@@ -27,6 +28,7 @@ except ImportError:
 _PROGRESS_INTERVAL = 500_000
 _DEFAULT_SAMPLE_SIZE = 0  # 0 = exact (no sampling); streaming aggregations make exact as
 # fast and memory-efficient as sampling, so there is no longer a speed/accuracy tradeoff.
+_BAM_SAMPLE_READS = 500_000  # primary reads to scan for unique-fraction and read-length estimate
 
 
 def _progress(msg: str, end: str = "") -> None:
@@ -492,7 +494,18 @@ def is_unique_alignment(record, unique_mapq_min: int) -> bool:
 
 
 def parse_bam_file(path: Path, unique_mapq_min: int = 20, progress: bool = True) -> dict:
-    """Compute read-based metrics from BAM using pysam."""
+    """Compute read-based metrics from BAM using pysam.
+
+    Reads only the first ``_BAM_SAMPLE_READS`` primary reads (exits early).
+    This is fast even for very large BAM files.
+
+    ``total_reads`` and ``unique_reads`` are not computed here because exact
+    counts require scanning the entire BAM — use a pairtools stats file via
+    ``--stats`` for exact read totals.  ``unique_fraction`` is the fraction of
+    sampled primary alignments that are unique (NH==1 when present, else
+    MAPQ >= ``unique_mapq_min``).  For a coordinate-sorted BAM the sample comes
+    from the start of the first reference sequence(s), so treat it as an estimate.
+    """
     try:
         import pysam
     except ModuleNotFoundError as exc:
@@ -501,32 +514,70 @@ def parse_bam_file(path: Path, unique_mapq_min: int = 20, progress: bool = True)
             "Install it with conda or pip, or omit --bam."
         ) from exc
 
-    total_reads = 0
-    unique_reads = 0
+    sampled_total = 0
+    sampled_unique = 0
     read_lengths: Counter[int] = Counter()
 
+    if progress:
+        _progress(f"  bam:   sampling first {_BAM_SAMPLE_READS:,} reads...")
     with pysam.AlignmentFile(str(path), "rb") as bam_file:
         for record in bam_file.fetch(until_eof=True):
             if record.is_secondary or record.is_supplementary:
                 continue
-
-            total_reads += 1
+            sampled_total += 1
             if record.query_length:
                 read_lengths[record.query_length] += 1
             if is_unique_alignment(record, unique_mapq_min):
-                unique_reads += 1
-            if progress and total_reads % _PROGRESS_INTERVAL == 0:
-                _progress(f"  bam:   {total_reads:,} reads")
+                sampled_unique += 1
+            if sampled_total >= _BAM_SAMPLE_READS:
+                break
+
+    unique_fraction = sampled_unique / sampled_total if sampled_total else 0.0
 
     if progress:
-        _progress(f"  bam:   {total_reads:,} reads", end="\n")
+        _progress(
+            f"  bam:   unique fraction {unique_fraction:.3f} "
+            f"(from {sampled_total:,}-read sample)",
+            end="\n",
+        )
 
     return {
-        "total_reads": total_reads,
-        "unique_reads": unique_reads,
+        "total_reads": None,          # requires full scan or stats file; not computed here
+        "unique_reads": None,         # populated by build_summary when total_reads is known
+        "unique_fraction": unique_fraction,
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "unique_mapq_min": unique_mapq_min,
+        "unique_fraction_sample_size": sampled_total,
+    }
+
+
+def parse_stats_file(path: Path) -> dict:
+    """Parse a pairtools stats file and return key QC metrics."""
+    data: dict[str, int] = {}
+    with path.open() as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) == 2:
+                try:
+                    data[parts[0]] = int(parts[1])
+                except ValueError:
+                    pass  # skip non-integer rows (chrom_freq, dist_freq, etc.)
+
+    total = data.get("total")
+    total_mapped = data.get("total_mapped")
+    total_dups = data.get("total_dups")
+    total_nodups = data.get("total_nodups")
+
+    return {
+        "total_reads": total,
+        "total_mapped": total_mapped,
+        "total_dups": total_dups,
+        "total_nodups": total_nodups,
+        "mapping_rate": total_mapped / total if total else None,
+        "duplication_rate": (
+            total_dups / total_mapped if (total_dups is not None and total_mapped) else None
+        ),
     }
 
 
@@ -614,13 +665,37 @@ def discover_samples(directory: Path) -> tuple[list[str], list[Path], list[Path]
     return sample_ids, pairs_paths, bam_paths
 
 
+def discover_stats(directory: Path, sample_ids: list[str]) -> list[Path | None]:
+    """Find ``<sample_id>.stats.txt`` pairtools stats files under ``directory``.
+
+    Returns one entry per sample id (``None`` when no stats file is found).
+    Raises if a sample has more than one candidate stats file.
+    """
+    found: dict[str, list[Path]] = {}
+    for path in sorted(directory.rglob("*.stats.txt")):
+        if path.is_file():
+            found.setdefault(path.name[: -len(".stats.txt")], []).append(path)
+    stats_paths: list[Path | None] = []
+    for sample_id in sample_ids:
+        candidates = found.get(sample_id, [])
+        if len(candidates) > 1:
+            raise ValueError(
+                f"Multiple stats files found for sample {sample_id}: "
+                + ", ".join(str(c) for c in candidates)
+            )
+        stats_paths.append(candidates[0] if candidates else None)
+    return stats_paths
+
+
 def build_summary(
     sample_id: str,
     pairs_metrics: dict,
-    bam_metrics: dict,
+    bam_metrics: dict | None,
+    stats_metrics: dict | None,
     cis_distance: int,
     pairs_path: Path,
     bam_path: Path | None,
+    stats_path: Path | None,
     sample_size: int | None = None,
 ) -> dict:
     """Assemble the final QC summary document."""
@@ -630,19 +705,61 @@ def build_summary(
         read_length = bam_metrics["read_length"]
         read_length_source = "bam"
 
+    # Prefer stats file for all mapping/duplication metrics; fall back to BAM sample.
+    if stats_metrics:
+        total_reads = stats_metrics["total_reads"]
+        total_mapped = stats_metrics["total_mapped"]
+        total_dups = stats_metrics["total_dups"]
+        mapping_rate = stats_metrics["mapping_rate"]
+        duplication_rate = stats_metrics["duplication_rate"]
+        total_reads_source = f"stats({stats_path.name})"
+    else:
+        total_reads = None
+        total_mapped = None
+        total_dups = None
+        mapping_rate = None
+        duplication_rate = None
+        total_reads_source = "unavailable — provide --stats for exact counts"
+
     sources: dict = {
         "read_length": read_length_source,
-        "total_reads": "bam",
-        "unique_reads": (
-            f"bam(primary reads; NH==1 when present, else MAPQ>={bam_metrics['unique_mapq_min']})"
-        ),
+        "total_reads": total_reads_source,
+        "total_mapped": total_reads_source,
+        "total_dups": total_reads_source,
+        "mapping_rate": total_reads_source,
+        "duplication_rate": total_reads_source,
         "non_dup_reads": "pairs(exact line count)",
         "cis_long_range_pairs": f"pairs(same chromosome and distance >= {cis_distance})",
         "fragment_length_distribution": "pairs(abs(pos31-pos51)+1, abs(pos32-pos52)+1)",
     }
+    unique_fraction = bam_metrics.get("unique_fraction") if bam_metrics else None
+    unique_reads = bam_metrics.get("unique_reads") if bam_metrics else None
+    if bam_metrics and (unique_fraction is not None or unique_reads is not None):
+        rule = f"NH==1 when present, else MAPQ>={bam_metrics.get('unique_mapq_min')}"
+        n_sampled = bam_metrics.get("unique_fraction_sample_size")
+        scope = f"first {n_sampled:,} primary reads" if n_sampled else "primary reads"
+        if unique_fraction is not None:
+            sources["unique_fraction"] = f"bam({scope}; {rule})"
+        if unique_reads is not None:
+            sources["unique_reads"] = f"bam({scope}; {rule})"
     if sample_size:
         sources["sampling"] = (
             f"stride sample of {sample_size:,} from {pairs_metrics['non_dup_reads']:,} reads"
+        )
+
+    precision: dict = {
+        "read_length": "exact",
+        "total_reads": "exact" if stats_metrics else None,
+        "total_mapped": "exact" if stats_metrics else None,
+        "total_dups": "exact" if stats_metrics else None,
+        "mapping_rate": "exact" if stats_metrics else None,
+        "duplication_rate": "exact" if stats_metrics else None,
+        "non_dup_reads": "exact",
+        "cis_long_range_pairs": "exact",
+    }
+    if unique_fraction is not None:
+        precision["unique_fraction"] = (
+            "estimate" if bam_metrics.get("unique_fraction_sample_size") else "exact"
         )
 
     return {
@@ -650,14 +767,24 @@ def build_summary(
         "inputs": {
             "pairs": str(pairs_path),
             "bam": str(bam_path) if bam_path else None,
+            "stats": str(stats_path) if stats_path else None,
         },
         "metrics": {
             "read_length": read_length,
-            "total_reads": bam_metrics["total_reads"],
-            "unique_reads": bam_metrics["unique_reads"],
+            "total_reads": total_reads,
+            "total_mapped": total_mapped,
+            "total_dups": total_dups,
+            "mapping_rate": mapping_rate,
+            "duplication_rate": duplication_rate,
+            "unique_fraction": unique_fraction,
+            "unique_fraction_sample_size": (
+                bam_metrics.get("unique_fraction_sample_size") if bam_metrics else None
+            ),
+            "unique_reads": unique_reads,
             "non_dup_reads": pairs_metrics["non_dup_reads"],
             "cis_long_range_pairs": pairs_metrics["cis_long_range_pairs"],
         },
+        "precision": precision,
         "fragment_length_distribution": pairs_metrics["fragment_length_distribution"],
         "sources": sources,
     }
@@ -666,7 +793,8 @@ def build_summary(
 def build_batch_summary(
     sample_ids: list[str],
     pairs_paths: list[Path],
-    bam_paths: list[Path],
+    bam_paths: list[Path | None],
+    stats_paths: list[Path | None],
     cis_distance: int,
     unique_mapq_min: int,
     sample_size: int | None = None,
@@ -675,22 +803,50 @@ def build_batch_summary(
     n = len(sample_ids)
     print(f"Processing {n} sample{'s' if n != 1 else ''}...", file=sys.stderr)
     samples = []
-    for i, (sample_id, pairs_path, bam_path) in enumerate(
-        zip(sample_ids, pairs_paths, bam_paths), start=1
+    for i, (sample_id, pairs_path, bam_path, stats_path) in enumerate(
+        zip(sample_ids, pairs_paths, bam_paths, stats_paths), start=1
     ):
         print(f"[{i}/{n}] {sample_id}", file=sys.stderr)
-        pairs_metrics = parse_pairs_file(
-            pairs_path, cis_distance=cis_distance, sample_size=sample_size
-        )
-        bam_metrics = parse_bam_file(bam_path, unique_mapq_min=unique_mapq_min)
+
+        # Parse stats file immediately (tiny file, no I/O cost).
+        stats_metrics = parse_stats_file(stats_path) if stats_path else None
+        if stats_metrics:
+            print(
+                f"  stats: total={stats_metrics['total_reads']:,}  "
+                f"mapped={stats_metrics['total_mapped']:,}  "
+                f"dups={stats_metrics['total_dups']:,}  "
+                f"mapping_rate={stats_metrics['mapping_rate']:.3f}  "
+                f"dup_rate={stats_metrics['duplication_rate']:.3f}",
+                file=sys.stderr,
+            )
+
+        # Run pairs (and optionally BAM) processing.
+        if bam_path:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                pairs_future = pool.submit(
+                    parse_pairs_file, pairs_path, cis_distance=cis_distance, sample_size=sample_size
+                )
+                bam_future = pool.submit(
+                    parse_bam_file, bam_path, unique_mapq_min=unique_mapq_min, progress=False
+                )
+                pairs_metrics = pairs_future.result()
+                bam_metrics = bam_future.result()
+        else:
+            pairs_metrics = parse_pairs_file(
+                pairs_path, cis_distance=cis_distance, sample_size=sample_size
+            )
+            bam_metrics = None
+
         samples.append(
             build_summary(
                 sample_id=sample_id,
                 pairs_metrics=pairs_metrics,
                 bam_metrics=bam_metrics,
+                stats_metrics=stats_metrics,
                 cis_distance=cis_distance,
                 pairs_path=pairs_path,
                 bam_path=bam_path,
+                stats_path=stats_path,
                 sample_size=sample_size,
             )
         )
@@ -732,7 +888,16 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--bams",
         type=Path,
         nargs="+",
-        help="BAM files matching --pairs. Required unless --dir is used.",
+        help="BAM files matching --pairs (optional; used for read-length cross-check).",
+    )
+    parser.add_argument(
+        "--stats",
+        type=Path,
+        nargs="+",
+        help=(
+            "Pairtools stats files matching --pairs order. "
+            "Provides exact total_reads, mapping_rate, and duplication_rate."
+        ),
     )
     parser.add_argument(
         "--sample-ids",
@@ -790,29 +955,33 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     if args.dir is not None:
         sample_ids, pairs_paths, bam_paths = discover_samples(args.dir)
+        stats_paths: list[Path | None] = discover_stats(args.dir, sample_ids)
         if args.sample_ids is not None:
             raise ValueError("--sample-ids cannot be used with --dir")
     else:
-        if args.bams is None:
-            raise ValueError("--bams is required unless --dir is used")
-        if len(args.pairs) != len(args.bams):
-            raise ValueError("--pairs and --bams must have the same number of entries")
-        if args.sample_ids is not None and len(args.sample_ids) != len(args.pairs):
-            raise ValueError("--sample-ids must match the number of pairs/BAM files")
-
         pairs_paths = args.pairs
-        bam_paths = args.bams
+        bam_paths = args.bams or [None] * len(pairs_paths)
+        stats_paths = args.stats or [None] * len(pairs_paths)
+
+        if len(bam_paths) != len(pairs_paths):
+            raise ValueError("--bams must have the same number of entries as --pairs")
+        if len(stats_paths) != len(pairs_paths):
+            raise ValueError("--stats must have the same number of entries as --pairs")
+        if args.sample_ids is not None and len(args.sample_ids) != len(pairs_paths):
+            raise ValueError("--sample-ids must match the number of pairs files")
+
         sample_ids = args.sample_ids
         if sample_ids is None:
             sample_ids = [
-                infer_sample_id(pairs_path=pairs_path, bam_path=bam_path)
-                for pairs_path, bam_path in zip(pairs_paths, bam_paths)
+                infer_sample_id(pairs_path=p, bam_path=b)
+                for p, b in zip(pairs_paths, bam_paths)
             ]
 
     summary = build_batch_summary(
         sample_ids=sample_ids,
         pairs_paths=pairs_paths,
         bam_paths=bam_paths,
+        stats_paths=stats_paths,
         cis_distance=args.cis_distance,
         unique_mapq_min=args.unique_mapq_min,
         sample_size=args.sample_size if args.sample_size != 0 else None,
