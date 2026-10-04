@@ -72,7 +72,7 @@ def test_build_batch_summary_wraps_samples():
     original_parse_bam = microc_qc.parse_bam_file
 
     try:
-        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000, sample_size=None: {
+        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000, sample_size=None, backend="auto": {
             "non_dup_reads": 10,
             "cis_long_range_pairs": 4,
             "read_length": 101,
@@ -271,3 +271,87 @@ def test_build_summary_with_stats_and_bam_sample():
     assert summary["metrics"]["unique_reads"] is None
     assert summary["precision"]["unique_fraction"] == "estimate"
     assert "first 500,000 primary reads" in summary["sources"]["unique_fraction"]
+
+
+def _write_synthetic_pairs(path, n=25_000, seed=7):
+    """Small .pairs file with the columns microc-qc needs (no external fixtures required)."""
+    import random
+    rng = random.Random(seed)
+    chroms = ["chr1", "chr2", "1", "X"]  # include a numeric-looking chromosome name
+    cols = ["readID", "chrom1", "pos1", "chrom2", "pos2", "strand1", "strand2", "pair_type",
+            "read_len1", "read_len2", "pos51", "pos52", "pos31", "pos32"]
+    with open(path, "w") as fh:
+        fh.write("## pairs format v1.0\n#columns: " + " ".join(cols) + "\n")
+        for i in range(n):
+            c1 = rng.choice(chroms)
+            c2 = c1 if rng.random() < 0.8 else rng.choice(chroms)
+            p1 = rng.randint(1, 5_000_000)
+            p2 = p1 + rng.randint(0, 200_000) if c1 == c2 else rng.randint(1, 5_000_000)
+            rl1 = rng.choice([0, 50, 150, 150, 150])
+            rl2 = rng.choice([150, 150, 66])
+            f1 = rng.randint(20, 400)
+            f2 = rng.randint(20, 400)
+            fh.write("\t".join(map(str, [
+                f"r{i}", c1, p1, c2, p2, "+", "-", "UU", rl1, rl2,
+                p1, p2, p1 + f1 - 1, p2 - f2 + 1])) + "\n")
+
+
+@pytest.mark.parametrize("backend", ["polars", "pandas"])
+def test_backends_match_python_reference(tmp_path, backend):
+    """Exact mode: polars (batched) and pandas must equal the pure-Python reference."""
+    if backend == "polars" and not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    if backend == "pandas" and not microc_qc._PANDAS_AVAILABLE:
+        pytest.skip("pandas not installed")
+    pairs = tmp_path / "synthetic.pairs"
+    _write_synthetic_pairs(pairs)
+    columns, _ = microc_qc._parse_pairs_header(pairs)
+    reference = microc_qc._parse_pairs_python(pairs, columns, 10_000, False)
+    got = microc_qc.parse_pairs_file(pairs, progress=False, backend=backend)
+    assert got == reference
+    assert got["non_dup_reads"] == 25_000
+    assert sum(got["fragment_length_distribution"].values()) == 2 * 25_000
+
+
+def test_polars_batched_is_independent_of_chunk_size(tmp_path):
+    if not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    pairs = tmp_path / "synthetic.pairs"
+    _write_synthetic_pairs(pairs, n=10_000)
+    columns, _ = microc_qc._parse_pairs_header(pairs)
+    a = microc_qc._parse_pairs_polars_batched(pairs, columns, 10_000, False, chunk_bytes=4093)
+    b = microc_qc._parse_pairs_polars_batched(pairs, columns, 10_000, False, chunk_bytes=1 << 30)
+    assert a == b
+
+
+def test_resolve_backend_validation():
+    assert microc_qc.resolve_backend("auto") in ("polars", "pandas", "python")
+    assert microc_qc.resolve_backend("python") == "python"
+    with pytest.raises(ValueError):
+        microc_qc.resolve_backend("duckdb")
+
+
+def test_cli_backend_flag(tmp_path):
+    pairs = tmp_path / "synthetic.pairs"
+    _write_synthetic_pairs(pairs, n=2_000)
+    out = tmp_path / "s.qc.json"
+    rc = microc_qc.main(["--pairs", str(pairs), "--sample-ids", "s", "--backend", "python",
+                         "--out", str(out)])
+    assert rc == 0
+    data = json.loads(out.read_text())
+    blob = json.dumps(data)
+    assert "fragment_length_distribution" in blob
+
+
+def test_polars_batched_reads_gzip(tmp_path):
+    if not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    import gzip, shutil
+    pairs = tmp_path / "synthetic.pairs"
+    _write_synthetic_pairs(pairs, n=3_000)
+    gz = tmp_path / "synthetic.pairs.gz"
+    with open(pairs, "rb") as src, gzip.open(gz, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    columns, _ = microc_qc._parse_pairs_header(pairs)
+    assert (microc_qc._parse_pairs_polars_batched(gz, columns, 10_000, False, chunk_bytes=2048)
+            == microc_qc._parse_pairs_python(pairs, columns, 10_000, False))

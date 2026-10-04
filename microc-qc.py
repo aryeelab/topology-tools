@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
-"""Compute Micro-C QC metrics from pairs, stats, and BAM files."""
+"""Compute Micro-C QC metrics from pairs, stats, and BAM files.
+
+Memory: in the default exact mode every pairs backend (polars, pandas, pure Python; see
+--backend) reads the file in fixed-size batches, so peak memory is bounded (about 1-2 GB per sample)
+regardless of file size. Runtime scales with file size (pandas: ~9 min per 100 GB of pairs).
+"""
 
 from __future__ import annotations
 
@@ -187,10 +192,9 @@ def _parse_pairs_polars(
 ) -> dict:
     """Fastest path: parse pairs file using polars (SIMD-accelerated CSV reader).
 
-    When sample_size is set, uses a two-pass approach (binary line count +
-    stride read into a small buffer) so memory usage is O(sample_size), never
-    proportional to the full file size.  Without sampling, the full file is
-    loaded into a polars DataFrame — suitable when it fits in RAM.
+    When sample_size is set, uses a two-pass approach (row count + stride sample).
+    Without sampling (the default), reads explicit batches and accumulates counters,
+    so peak memory is O(batch size) regardless of file size.
     """
     import io as _io
 
@@ -229,60 +233,109 @@ def _parse_pairs_polars(
 
         return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress)
 
-    else:
-        # No sampling — two streaming scans: peak memory is O(unique_values),
-        # never proportional to the full file size, so any file fits.
-        if progress:
-            _progress("  pairs: computing metrics (streaming pass 1/2)...")
+    return _parse_pairs_polars_batched(path, columns, cis_distance, progress)
 
-        # Scan 1: scalar aggregations (total rows + cis long-range count).
-        scalars = _scan().select([
-            pl.len().alias("total_rows"),
+
+def _iter_polars_batches(path: Path, columns: list[str], needed: list[str], chunk_bytes: int):
+    """Yield polars DataFrames of `needed` columns (ints as Int32) with bounded memory.
+
+    The file is read in fixed-size byte chunks cut at line boundaries and each chunk is parsed
+    by polars, so peak memory is O(chunk_bytes) whatever the file size and polars version.
+    (Lazy scan_csv + group_by/unpivot is not reliably streamed: polars 1.8 used ~50 GB on a
+    105 GB pairs file; read_csv_batched memory-maps/reads ahead: ~22 GB peak on a 30 GB file.)
+    Columns are read as strings (no per-chunk dtype inference, so numeric chromosome names
+    cannot break later chunks) and the integer columns are cast.
+    """
+    idx = sorted(columns.index(c) for c in needed)
+    names = [columns[i] for i in idx]
+    int_cols = [c for c in needed if c not in ("chrom1", "chrom2")]
+    casts = [pl.col(c).cast(pl.Int32, strict=True) for c in int_cols]
+
+    def _parse(data: bytes):
+        df = pl.read_csv(data, separator="\t", has_header=False, columns=idx,
+                         infer_schema_length=0, comment_prefix="#")
+        df.columns = names
+        return df.with_columns(casts)
+
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rb") as fh:
+        rest = b""
+        in_header = True
+        while True:
+            block = fh.read(chunk_bytes)
+            data = rest + block
+            if not block:
+                rest = b""
+            else:
+                cut = data.rfind(b"\n")
+                if cut < 0:
+                    rest = data
+                    continue
+                data, rest = data[:cut + 1], data[cut + 1:]
+            if in_header:
+                # drop leading header/comment lines (pairs headers precede all data)
+                while data.startswith(b"#"):
+                    nl = data.find(b"\n")
+                    data = b"" if nl < 0 else data[nl + 1:]
+                if data:
+                    in_header = False
+            if data.strip():
+                yield _parse(data)
+            if not block:
+                break
+
+
+def _value_counts_into(counter: Counter, series) -> None:
+    vc = series.value_counts()
+    for value, count in zip(vc.to_series(0).to_list(), vc.to_series(1).to_list()):
+        counter[int(value)] += int(count)
+
+
+def _parse_pairs_polars_batched(
+    path: Path, columns: list[str], cis_distance: int, progress: bool,
+    chunk_bytes: int = 128 << 20,
+) -> dict:
+    """Exact (no sampling) polars path with memory bounded by chunk_bytes, not file size."""
+    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
+              "pos51", "pos52", "pos31", "pos32"]
+    total_rows = 0
+    cis_lr = 0
+    fragment_lengths: Counter[int] = Counter()
+    read_lengths: Counter[int] = Counter()
+    prev_milestone = 0
+    for df in _iter_polars_batches(path, columns, needed, chunk_bytes):
+        total_rows += df.height
+        cis_lr += int(df.select(
             ((pl.col("chrom1") == pl.col("chrom2")) &
-             ((pl.col("pos2") - pl.col("pos1")).abs() >= cis_distance)
-             ).sum().alias("cis_lr"),
-        ]).collect(streaming=True)
-        total_rows = int(scalars["total_rows"][0])
-        cis_lr = int(scalars["cis_lr"][0])
-
+             ((pl.col("pos2") - pl.col("pos1")).abs() >= cis_distance)).sum()
+        ).item())
+        frag = pl.concat([
+            ((df["pos31"] - df["pos51"]).abs() + 1).rename("v"),
+            ((df["pos32"] - df["pos52"]).abs() + 1).rename("v"),
+        ])
+        _value_counts_into(fragment_lengths, frag)
+        rl = pl.concat([
+            df["read_len1"].filter(df["read_len1"] > 0).rename("v"),
+            df["read_len2"].filter(df["read_len2"] > 0).rename("v"),
+        ])
+        _value_counts_into(read_lengths, rl)
         if progress:
-            _progress(f"  pairs: {total_rows:,} reads — computing distributions (pass 2/2)...")
+            milestone = (total_rows // (100 * _PROGRESS_INTERVAL)) * (100 * _PROGRESS_INTERVAL)
+            if milestone > prev_milestone:
+                _progress(f"  pairs: {total_rows:,} reads")
+                prev_milestone = milestone
 
-        # Scan 2: fragment-length and read-length distributions via group_by.
-        dists = (
-            _scan().select([
-                ((pl.col("pos31") - pl.col("pos51")).abs() + 1).cast(pl.Int32).alias("frag1"),
-                ((pl.col("pos32") - pl.col("pos52")).abs() + 1).cast(pl.Int32).alias("frag2"),
-                pl.col("read_len1").alias("rl1"),
-                pl.col("read_len2").alias("rl2"),
-            ])
-            .unpivot(on=["frag1", "frag2", "rl1", "rl2"], variable_name="kind", value_name="val")
-            .filter(pl.col("val") > 0)
-            .group_by(["kind", "val"]).agg(pl.len().alias("count"))
-            .collect(streaming=True)
-        )
+    if progress:
+        _progress(f"  pairs: {total_rows:,} reads (100%)", end="\n")
 
-        frag_df = (dists.filter(pl.col("kind").str.starts_with("frag"))
-                   .group_by("val").agg(pl.col("count").sum()).sort("val"))
-        rl_df = (dists.filter(pl.col("kind").str.starts_with("rl"))
-                 .group_by("val").agg(pl.col("count").sum()).sort("val"))
-
-        fragment_lengths = dict(zip(frag_df["val"].to_list(), frag_df["count"].to_list()))
-        read_lengths: Counter[int] = Counter(
-            dict(zip(rl_df["val"].to_list(), rl_df["count"].to_list()))
-        )
-
-        if progress:
-            _progress(f"  pairs: {total_rows:,} reads (100%)", end="\n")
-
-        return {
-            "non_dup_reads": total_rows,
-            "cis_long_range_pairs": cis_lr,
-            "read_length": infer_consensus_read_length(read_lengths),
-            "read_length_distribution": dict(sorted(read_lengths.items())),
-            "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
-            "fragment_count": 2 * total_rows,
-        }
+    return {
+        "non_dup_reads": total_rows,
+        "cis_long_range_pairs": cis_lr,
+        "read_length": infer_consensus_read_length(read_lengths),
+        "read_length_distribution": dict(sorted(read_lengths.items())),
+        "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+        "fragment_count": 2 * total_rows,
+    }
 
 
 def _parse_pairs_pandas(
@@ -457,11 +510,28 @@ def _parse_pairs_python(
     }
 
 
+BACKENDS = ("auto", "polars", "pandas", "python")
+
+
+def resolve_backend(backend: str = "auto") -> str:
+    """Map a requested backend to an available one ('auto': polars > pandas > python)."""
+    if backend not in BACKENDS:
+        raise ValueError(f"unknown backend {backend!r}; choose from {', '.join(BACKENDS)}")
+    if backend == "auto":
+        return "polars" if _POLARS_AVAILABLE else ("pandas" if _PANDAS_AVAILABLE else "python")
+    if backend == "polars" and not _POLARS_AVAILABLE:
+        raise ValueError("backend 'polars' requested but polars is not installed")
+    if backend == "pandas" and not _PANDAS_AVAILABLE:
+        raise ValueError("backend 'pandas' requested but pandas is not installed")
+    return backend
+
+
 def parse_pairs_file(
     path: Path,
     cis_distance: int = 10_000,
     progress: bool = True,
     sample_size: int | None = None,
+    backend: str = "auto",
 ) -> dict:
     """Parse a pairs/pairsam file and compute QC metrics.
 
@@ -473,13 +543,19 @@ def parse_pairs_file(
     When sample_size is set, non_dup_reads is always exact (full file count) while
     rate/distribution metrics are estimated from a stride sample of sample_size reads.
     Set sample_size=0 to disable sampling and read every row.
+
+    All three backends give identical results and, in exact mode, use memory bounded by their
+    batch size rather than the file size. `backend` selects one explicitly ('auto' = fastest
+    available).
     """
     if sample_size == 0:
         sample_size = None
     columns, _ = _parse_pairs_header(path)
-    if _POLARS_AVAILABLE:
+    backend = resolve_backend(backend)
+    print(f"  pairs: backend={backend}", file=sys.stderr)
+    if backend == "polars":
         return _parse_pairs_polars(path, columns, cis_distance, progress, sample_size)
-    if _PANDAS_AVAILABLE:
+    if backend == "pandas":
         return _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size)
     return _parse_pairs_python(path, columns, cis_distance, progress, sample_size)
 
@@ -798,6 +874,7 @@ def build_batch_summary(
     cis_distance: int,
     unique_mapq_min: int,
     sample_size: int | None = None,
+    backend: str = "auto",
 ) -> dict:
     """Assemble per-sample summaries for a batch run."""
     n = len(sample_ids)
@@ -824,7 +901,8 @@ def build_batch_summary(
         if bam_path:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 pairs_future = pool.submit(
-                    parse_pairs_file, pairs_path, cis_distance=cis_distance, sample_size=sample_size
+                    parse_pairs_file, pairs_path, cis_distance=cis_distance, sample_size=sample_size,
+                    backend=backend,
                 )
                 bam_future = pool.submit(
                     parse_bam_file, bam_path, unique_mapq_min=unique_mapq_min, progress=False
@@ -833,7 +911,7 @@ def build_batch_summary(
                 bam_metrics = bam_future.result()
         else:
             pairs_metrics = parse_pairs_file(
-                pairs_path, cis_distance=cis_distance, sample_size=sample_size
+                pairs_path, cis_distance=cis_distance, sample_size=sample_size, backend=backend
             )
             bam_metrics = None
 
@@ -942,6 +1020,13 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        default="auto",
+        help=("Pairs parsing backend (default: auto = polars if installed, else pandas, else pure "
+              "Python). All give identical output with memory bounded by batch size."),
+    )
+    parser.add_argument(
         "--indent",
         type=int,
         default=2,
@@ -985,6 +1070,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         cis_distance=args.cis_distance,
         unique_mapq_min=args.unique_mapq_min,
         sample_size=args.sample_size if args.sample_size != 0 else None,
+        backend=args.backend,
     )
 
     write_sample_summaries(summary["samples"], args.out)
