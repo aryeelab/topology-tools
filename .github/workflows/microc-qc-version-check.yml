@@ -1,0 +1,16 @@
+# A microc-qc release tag microc-qc/vX.Y.Z must match __version__ in microc-qc.py.
+name: microc-qc-version-check
+on:
+  push:
+    tags: ["microc-qc/v*"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches microc-qc.py __version__
+        run: |
+          tag=${GITHUB_REF_NAME#microc-qc/v}
+          ver=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' microc-qc.py)
+          echo "tag=$tag microc-qc.py=$ver"
+          [ "$tag" = "$ver" ] || { echo "::error::tag microc-qc/v$tag does not match microc-qc.py $ver"; exit 1; }

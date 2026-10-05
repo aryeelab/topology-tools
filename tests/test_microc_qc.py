@@ -426,3 +426,14 @@ def test_fraglen_chrom_pattern_override(tmp_path):
     _write_mixed_contig_pairs(pairs)
     m = microc_qc.parse_pairs_file(pairs, progress=False, backend="python", chrom_pattern=r".")
     assert sum(m["fragment_length_distribution"].values()) == 10
+
+
+def test_version_in_cli_and_summary(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        microc_qc.main(["--version"])
+    assert capsys.readouterr().out.strip() == f"microc-qc {microc_qc.__version__}"
+    pairs = tmp_path / "mixed.pairs"
+    _write_mixed_contig_pairs(pairs)
+    out = tmp_path / "s.qc.json"
+    microc_qc.main(["--pairs", str(pairs), "--sample-ids", "s", "--backend", "python", "--out", str(out)])
+    assert json.loads(out.read_text())["microc_qc_version"] == microc_qc.__version__

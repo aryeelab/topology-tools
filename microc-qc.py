@@ -31,6 +31,8 @@ try:
 except ImportError:
     _PANDAS_AVAILABLE = False
 
+__version__ = "1.0.0"  # microc-qc release; tagged microc-qc/v<version> (see RELEASING.md)
+
 _PROGRESS_INTERVAL = 500_000
 _DEFAULT_SAMPLE_SIZE = 0  # 0 = exact (no sampling); streaming aggregations make exact as
 # fast and memory-efficient as sampling, so there is no longer a speed/accuracy tradeoff.
@@ -938,6 +940,7 @@ def build_summary(
 
     return {
         "sample_id": sample_id,
+        "microc_qc_version": __version__,
         "inputs": {
             "pairs": str(pairs_path),
             "bam": str(bam_path) if bam_path else None,
@@ -1060,6 +1063,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compute Micro-C QC metrics from parallel lists of pairs and BAM files."
     )
+    parser.add_argument("--version", action="version", version=f"microc-qc {__version__}")
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument(
         "--pairs",
