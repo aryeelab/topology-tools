@@ -143,7 +143,6 @@ jobs:
     - name: Show pytest logs
       if: ${{ always() }}
       run: |           
-        echo "STDOUT:"
-        tail -n 200 /tmp/pytest_workflow/*/log.out
-        echo "STDERR:"
-        tail -n 200 /tmp/pytest_workflow/*/log.err    
+        ls -la /tmp/pytest_workflow /tmp/pytest_workflow/* || true
+        find / -xdev \( -name 'small-rcmc.mapped.pairs' -o -name 'ultima.r1.fastq.gz' -o -name log.out \) -not -path '*/cromwell-executions/*' 2>/dev/null || true
+        for f in /tmp/pytest_workflow/*/log.out /tmp/pytest_workflow/*/log.err; do echo "== $f"; tail -n 100 "$f" || true; done
