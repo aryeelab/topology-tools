@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import re
 import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -34,6 +35,11 @@ _PROGRESS_INTERVAL = 500_000
 _DEFAULT_SAMPLE_SIZE = 0  # 0 = exact (no sampling); streaming aggregations make exact as
 # fast and memory-efficient as sampling, so there is no longer a speed/accuracy tradeoff.
 _BAM_SAMPLE_READS = 500_000  # primary reads to scan for unique-fraction and read-length estimate
+# fragment_length_distribution counts only read ends on primary nuclear chromosomes: numbered
+# autosomes and X, with or without a "chr" prefix, including subregion contigs ("chr10:1-2").
+# chrM, chrY, unplaced/random/alt scaffolds and decoys are excluded.
+_DEFAULT_FRAGLEN_CHROM_PATTERN = r"^(chr)?([0-9]+|X)(:[0-9]+-[0-9]+)?$"
+_CHRM_NAMES = ("chrM", "chrMT", "M", "MT")
 
 
 def _progress(msg: str, end: str = "") -> None:
@@ -144,7 +150,8 @@ def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
 
 
 def _polars_metrics_from_df(
-    df, total_rows: int, scale: float, cis_distance: int, progress: bool
+    df, total_rows: int, scale: float, cis_distance: int, progress: bool,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Compute QC metrics from an already-loaded (possibly sampled) polars DataFrame."""
     if progress:
@@ -156,13 +163,11 @@ def _polars_metrics_from_df(
          ((df["pos2"] - df["pos1"]).abs() >= cis_distance)).sum() * scale
     ))
 
-    frag1 = (df["pos31"] - df["pos51"]).abs() + 1
-    frag2 = (df["pos32"] - df["pos52"]).abs() + 1
-    frag_series = pl.concat([frag1.rename("fl"), frag2.rename("fl")])
-    frag_vc = frag_series.value_counts().sort("fl")
-    raw_fl = dict(zip(frag_vc["fl"].to_list(), frag_vc["count"].to_list()))
+    raw_fl: Counter[int] = Counter()
+    chroms: set[str] = set()
+    raw_chrm = _polars_fraglen_into(raw_fl, chroms, df, chrom_pattern)
     fragment_lengths = (
-        {k: int(round(v * scale)) for k, v in raw_fl.items()} if scale > 1.0 else raw_fl
+        {k: int(round(v * scale)) for k, v in raw_fl.items()} if scale > 1.0 else dict(raw_fl)
     )
 
     rl1 = df["read_len1"].filter(df["read_len1"] > 0)
@@ -182,13 +187,36 @@ def _polars_metrics_from_df(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+        "fragment_length_chromosomes": sorted(chroms),
         "fragment_count": 2 * total_rows,
+        "chrM_fragment_count": int(round(raw_chrm * scale)),
     }
+
+
+def _polars_fraglen_into(counter: Counter, chroms: set, df, chrom_pattern: str) -> int:
+    """Add per-read-end fragment lengths on matching chromosomes to `counter`.
+
+    Each read end is kept or dropped by its own chromosome (chrom1 for end 1, chrom2 for
+    end 2). Matching chromosome names are added to `chroms`; returns the number of chrM ends.
+    """
+    c1 = df["chrom1"].cast(pl.Utf8)
+    c2 = df["chrom2"].cast(pl.Utf8)
+    k1 = c1.str.contains(chrom_pattern)
+    k2 = c2.str.contains(chrom_pattern)
+    frag = pl.concat([
+        ((df["pos31"] - df["pos51"]).abs() + 1).filter(k1).rename("v"),
+        ((df["pos32"] - df["pos52"]).abs() + 1).filter(k2).rename("v"),
+    ])
+    _value_counts_into(counter, frag)
+    chroms.update(c1.filter(k1).unique().to_list())
+    chroms.update(c2.filter(k2).unique().to_list())
+    return int(c1.is_in(_CHRM_NAMES).sum() + c2.is_in(_CHRM_NAMES).sum())
 
 
 def _parse_pairs_polars(
     path: Path, columns: list[str], cis_distance: int, progress: bool,
     sample_size: int | None = None,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Fastest path: parse pairs file using polars (SIMD-accelerated CSV reader).
 
@@ -231,9 +259,11 @@ def _parse_pairs_polars(
         df = _scan().gather_every(stride).collect()
         scale = total_rows / max(len(df), 1)
 
-        return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress)
+        return _polars_metrics_from_df(df, total_rows, scale, cis_distance, progress,
+                                       chrom_pattern)
 
-    return _parse_pairs_polars_batched(path, columns, cis_distance, progress)
+    return _parse_pairs_polars_batched(path, columns, cis_distance, progress,
+                                       chrom_pattern=chrom_pattern)
 
 
 def _iter_polars_batches(path: Path, columns: list[str], needed: list[str], chunk_bytes: int):
@@ -294,6 +324,7 @@ def _value_counts_into(counter: Counter, series) -> None:
 def _parse_pairs_polars_batched(
     path: Path, columns: list[str], cis_distance: int, progress: bool,
     chunk_bytes: int = 128 << 20,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Exact (no sampling) polars path with memory bounded by chunk_bytes, not file size."""
     needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
@@ -301,6 +332,8 @@ def _parse_pairs_polars_batched(
     total_rows = 0
     cis_lr = 0
     fragment_lengths: Counter[int] = Counter()
+    chroms: set[str] = set()
+    chrm = 0
     read_lengths: Counter[int] = Counter()
     prev_milestone = 0
     for df in _iter_polars_batches(path, columns, needed, chunk_bytes):
@@ -309,11 +342,7 @@ def _parse_pairs_polars_batched(
             ((pl.col("chrom1") == pl.col("chrom2")) &
              ((pl.col("pos2") - pl.col("pos1")).abs() >= cis_distance)).sum()
         ).item())
-        frag = pl.concat([
-            ((df["pos31"] - df["pos51"]).abs() + 1).rename("v"),
-            ((df["pos32"] - df["pos52"]).abs() + 1).rename("v"),
-        ])
-        _value_counts_into(fragment_lengths, frag)
+        chrm += _polars_fraglen_into(fragment_lengths, chroms, df, chrom_pattern)
         rl = pl.concat([
             df["read_len1"].filter(df["read_len1"] > 0).rename("v"),
             df["read_len2"].filter(df["read_len2"] > 0).rename("v"),
@@ -334,13 +363,31 @@ def _parse_pairs_polars_batched(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+        "fragment_length_chromosomes": sorted(chroms),
         "fragment_count": 2 * total_rows,
+        "chrM_fragment_count": chrm,
     }
+
+
+def _chrom_matcher(chrom_pattern: str):
+    """Return a cached chromosome-name -> bool function for `chrom_pattern` (regex search)."""
+    regex = re.compile(chrom_pattern)
+    cache: dict[str, bool] = {}
+
+    def keep(chrom: str) -> bool:
+        hit = cache.get(chrom)
+        if hit is None:
+            hit = cache[chrom] = regex.search(chrom) is not None
+        return hit
+
+    keep.matched = lambda: sorted(c for c, hit in cache.items() if hit)
+    return keep
 
 
 def _parse_pairs_pandas(
     path: Path, columns: list[str], cis_distance: int, progress: bool,
     sample_size: int | None = None,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Fast path: parse pairs file using chunked pandas read_csv."""
     needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
@@ -358,6 +405,8 @@ def _parse_pairs_pandas(
     cis_long_range_pairs = 0
     fragment_lengths: Counter[int] = Counter()
     read_lengths: Counter[int] = Counter()
+    keep = _chrom_matcher(chrom_pattern)
+    chrm = 0
 
     chunks = pd.read_csv(
         path,
@@ -368,6 +417,7 @@ def _parse_pairs_pandas(
         usecols=needed,
         chunksize=1_000_000,
         dtype={
+            "chrom1": "str", "chrom2": "str",
             "pos1": "int32", "pos2": "int32",
             "pos51": "int32", "pos52": "int32",
             "pos31": "int32", "pos32": "int32",
@@ -403,10 +453,13 @@ def _parse_pairs_pandas(
         for length, count in pd.concat([r1, r2]).value_counts().items():
             read_lengths[int(length)] += int(count)
 
-        frag1 = (chunk.pos31 - chunk.pos51).abs() + 1
-        frag2 = (chunk.pos32 - chunk.pos52).abs() + 1
+        k1 = chunk.chrom1.map(keep).astype(bool)
+        k2 = chunk.chrom2.map(keep).astype(bool)
+        frag1 = ((chunk.pos31 - chunk.pos51).abs() + 1)[k1]
+        frag2 = ((chunk.pos32 - chunk.pos52).abs() + 1)[k2]
         for length, count in pd.concat([frag1, frag2]).value_counts().items():
             fragment_lengths[int(length)] += int(count)
+        chrm += int(chunk.chrom1.isin(_CHRM_NAMES).sum() + chunk.chrom2.isin(_CHRM_NAMES).sum())
 
     non_dup_reads = total_rows if total_rows is not None else base_row
     scale = non_dup_reads / sampled_rows if sampled_rows < non_dup_reads else 1.0
@@ -417,6 +470,7 @@ def _parse_pairs_pandas(
     if scale > 1.0:
         cis_long_range_pairs = int(round(cis_long_range_pairs * scale))
         fragment_lengths = Counter({k: int(round(v * scale)) for k, v in fragment_lengths.items()})
+        chrm = int(round(chrm * scale))
 
     return {
         "non_dup_reads": non_dup_reads,
@@ -424,13 +478,16 @@ def _parse_pairs_pandas(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+        "fragment_length_chromosomes": keep.matched(),
         "fragment_count": 2 * non_dup_reads,
+        "chrM_fragment_count": chrm,
     }
 
 
 def _parse_pairs_python(
     path: Path, columns: list[str], cis_distance: int, progress: bool,
     sample_size: int | None = None,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Pure-Python fallback for parse_pairs_file (used when pandas is unavailable)."""
     column_index = {name: idx for idx, name in enumerate(columns)}
@@ -449,6 +506,8 @@ def _parse_pairs_python(
     cis_long_range_pairs = 0
     fragment_lengths: Counter[int] = Counter()
     read_lengths: Counter[int] = Counter()
+    keep = _chrom_matcher(chrom_pattern)
+    chrm = 0
     file_size = path.stat().st_size
 
     with open_textfile(path) as handle:
@@ -486,8 +545,14 @@ def _parse_pairs_python(
             pos52 = int(fields[ci["pos52"]])
             pos31 = int(fields[ci["pos31"]])
             pos32 = int(fields[ci["pos32"]])
-            fragment_lengths[abs(pos31 - pos51) + 1] += 1
-            fragment_lengths[abs(pos32 - pos52) + 1] += 1
+            if keep(chrom1):
+                fragment_lengths[abs(pos31 - pos51) + 1] += 1
+            elif chrom1 in _CHRM_NAMES:
+                chrm += 1
+            if keep(chrom2):
+                fragment_lengths[abs(pos32 - pos52) + 1] += 1
+            elif chrom2 in _CHRM_NAMES:
+                chrm += 1
 
     non_dup_reads = total_rows if total_rows is not None else data_line
     sampled = data_line // stride  # number of rows actually processed
@@ -499,6 +564,7 @@ def _parse_pairs_python(
     if scale > 1.0:
         cis_long_range_pairs = int(round(cis_long_range_pairs * scale))
         fragment_lengths = Counter({k: int(round(v * scale)) for k, v in fragment_lengths.items()})
+        chrm = int(round(chrm * scale))
 
     return {
         "non_dup_reads": non_dup_reads,
@@ -506,7 +572,9 @@ def _parse_pairs_python(
         "read_length": infer_consensus_read_length(read_lengths),
         "read_length_distribution": dict(sorted(read_lengths.items())),
         "fragment_length_distribution": dict(sorted(fragment_lengths.items())),
+        "fragment_length_chromosomes": keep.matched(),
         "fragment_count": 2 * non_dup_reads,
+        "chrM_fragment_count": chrm,
     }
 
 
@@ -532,6 +600,7 @@ def parse_pairs_file(
     progress: bool = True,
     sample_size: int | None = None,
     backend: str = "auto",
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Parse a pairs/pairsam file and compute QC metrics.
 
@@ -544,6 +613,10 @@ def parse_pairs_file(
     rate/distribution metrics are estimated from a stride sample of sample_size reads.
     Set sample_size=0 to disable sampling and read every row.
 
+    fragment_length_distribution counts only read ends whose own chromosome matches
+    `chrom_pattern` (regex search; default: autosomes + X). chrM read ends are counted
+    separately as chrM_fragment_count.
+
     All three backends give identical results and, in exact mode, use memory bounded by their
     batch size rather than the file size. `backend` selects one explicitly ('auto' = fastest
     available).
@@ -554,10 +627,13 @@ def parse_pairs_file(
     backend = resolve_backend(backend)
     print(f"  pairs: backend={backend}", file=sys.stderr)
     if backend == "polars":
-        return _parse_pairs_polars(path, columns, cis_distance, progress, sample_size)
+        return _parse_pairs_polars(path, columns, cis_distance, progress, sample_size,
+                                   chrom_pattern)
     if backend == "pandas":
-        return _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size)
-    return _parse_pairs_python(path, columns, cis_distance, progress, sample_size)
+        return _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size,
+                                   chrom_pattern)
+    return _parse_pairs_python(path, columns, cis_distance, progress, sample_size,
+                               chrom_pattern)
 
 
 def is_unique_alignment(record, unique_mapq_min: int) -> bool:
@@ -773,6 +849,7 @@ def build_summary(
     bam_path: Path | None,
     stats_path: Path | None,
     sample_size: int | None = None,
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Assemble the final QC summary document."""
     read_length = pairs_metrics["read_length"]
@@ -806,7 +883,16 @@ def build_summary(
         "duplication_rate": total_reads_source,
         "non_dup_reads": "pairs(exact line count)",
         "cis_long_range_pairs": f"pairs(same chromosome and distance >= {cis_distance})",
-        "fragment_length_distribution": "pairs(abs(pos31-pos51)+1, abs(pos32-pos52)+1)",
+        "fragment_length_distribution": (
+            "pairs(abs(pos31-pos51)+1, abs(pos32-pos52)+1; each read end kept if its own "
+            f"chromosome matches {chrom_pattern!r})"
+        ),
+        "chrM_fraction": f"pairs(read ends on {'/'.join(_CHRM_NAMES)} / all read ends)",
+        "fraction_fragments_le80bp": "fragment_length_distribution(length <= 80 / total)",
+        "fraction_fragments_ge_read_length": (
+            "fragment_length_distribution(length >= read_length / total); aligned spans cannot "
+            "exceed read length except via gapped alignments, so this is the read-length pile-up"
+        ),
     }
     unique_fraction = bam_metrics.get("unique_fraction") if bam_metrics else None
     unique_reads = bam_metrics.get("unique_reads") if bam_metrics else None
@@ -818,6 +904,18 @@ def build_summary(
             sources["unique_fraction"] = f"bam({scope}; {rule})"
         if unique_reads is not None:
             sources["unique_reads"] = f"bam({scope}; {rule})"
+    fraglen = pairs_metrics["fragment_length_distribution"]
+    nuclear_fragments = sum(fraglen.values())
+
+    def _fraglen_fraction(pred) -> float | None:
+        if not nuclear_fragments:
+            return None
+        return sum(v for k, v in fraglen.items() if pred(k)) / nuclear_fragments
+
+    fragment_count = pairs_metrics.get("fragment_count")
+    chrm_count = pairs_metrics.get("chrM_fragment_count")
+    chrm_fraction = chrm_count / fragment_count if fragment_count and chrm_count is not None else None
+
     if sample_size:
         sources["sampling"] = (
             f"stride sample of {sample_size:,} from {pairs_metrics['non_dup_reads']:,} reads"
@@ -859,9 +957,18 @@ def build_summary(
             "unique_reads": unique_reads,
             "non_dup_reads": pairs_metrics["non_dup_reads"],
             "cis_long_range_pairs": pairs_metrics["cis_long_range_pairs"],
+            "nuclear_fragment_count": nuclear_fragments,
+            "chrM_fragment_count": chrm_count,
+            "chrM_fraction": chrm_fraction,
+            "fraction_fragments_le80bp": _fraglen_fraction(lambda k: k <= 80),
+            "fraction_fragments_ge_read_length": (
+                _fraglen_fraction(lambda k: k >= read_length) if read_length else None
+            ),
         },
         "precision": precision,
-        "fragment_length_distribution": pairs_metrics["fragment_length_distribution"],
+        "fragment_length_distribution": fraglen,
+        "fragment_length_chromosomes": pairs_metrics.get("fragment_length_chromosomes"),
+        "fragment_length_chrom_pattern": chrom_pattern,
         "sources": sources,
     }
 
@@ -875,6 +982,7 @@ def build_batch_summary(
     unique_mapq_min: int,
     sample_size: int | None = None,
     backend: str = "auto",
+    chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Assemble per-sample summaries for a batch run."""
     n = len(sample_ids)
@@ -902,7 +1010,7 @@ def build_batch_summary(
             with ThreadPoolExecutor(max_workers=2) as pool:
                 pairs_future = pool.submit(
                     parse_pairs_file, pairs_path, cis_distance=cis_distance, sample_size=sample_size,
-                    backend=backend,
+                    backend=backend, chrom_pattern=chrom_pattern,
                 )
                 bam_future = pool.submit(
                     parse_bam_file, bam_path, unique_mapq_min=unique_mapq_min, progress=False
@@ -911,7 +1019,8 @@ def build_batch_summary(
                 bam_metrics = bam_future.result()
         else:
             pairs_metrics = parse_pairs_file(
-                pairs_path, cis_distance=cis_distance, sample_size=sample_size, backend=backend
+                pairs_path, cis_distance=cis_distance, sample_size=sample_size, backend=backend,
+                chrom_pattern=chrom_pattern,
             )
             bam_metrics = None
 
@@ -926,6 +1035,7 @@ def build_batch_summary(
                 bam_path=bam_path,
                 stats_path=stats_path,
                 sample_size=sample_size,
+                chrom_pattern=chrom_pattern,
             )
         )
     return {"samples": samples}
@@ -1027,6 +1137,14 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
               "Python). All give identical output with memory bounded by batch size."),
     )
     parser.add_argument(
+        "--fraglen-chrom-pattern",
+        default=_DEFAULT_FRAGLEN_CHROM_PATTERN,
+        metavar="REGEX",
+        help=("Chromosomes whose read ends enter fragment_length_distribution (regex search). "
+              "Default: autosomes + X, optional 'chr' prefix and ':start-end' subregion suffix; "
+              "excludes chrM, chrY and scaffolds."),
+    )
+    parser.add_argument(
         "--indent",
         type=int,
         default=2,
@@ -1071,6 +1189,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         unique_mapq_min=args.unique_mapq_min,
         sample_size=args.sample_size if args.sample_size != 0 else None,
         backend=args.backend,
+        chrom_pattern=args.fraglen_chrom_pattern,
     )
 
     write_sample_summaries(summary["samples"], args.out)

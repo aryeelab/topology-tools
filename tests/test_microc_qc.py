@@ -72,7 +72,7 @@ def test_build_batch_summary_wraps_samples():
     original_parse_bam = microc_qc.parse_bam_file
 
     try:
-        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000, sample_size=None, backend="auto": {
+        microc_qc.parse_pairs_file = lambda path, cis_distance=10_000, sample_size=None, backend="auto", chrom_pattern=None: {
             "non_dup_reads": 10,
             "cis_long_range_pairs": 4,
             "read_length": 101,
@@ -355,3 +355,74 @@ def test_polars_batched_reads_gzip(tmp_path):
     columns, _ = microc_qc._parse_pairs_header(pairs)
     assert (microc_qc._parse_pairs_polars_batched(gz, columns, 10_000, False, chunk_bytes=2048)
             == microc_qc._parse_pairs_python(pairs, columns, 10_000, False))
+
+
+def _write_mixed_contig_pairs(path):
+    """Pairs whose two read ends sit on different contig classes, with known per-end lengths."""
+    cols = ["readID", "chrom1", "pos1", "chrom2", "pos2", "strand1", "strand2", "pair_type",
+            "read_len1", "read_len2", "pos51", "pos52", "pos31", "pos32"]
+    # (chrom1, len1, chrom2, len2)
+    rows = [
+        ("chr1", 100, "chr1", 120),         # both nuclear
+        ("chrM", 60, "chr2", 140),          # end 1 chrM, end 2 nuclear
+        ("chrX", 50, "chrY", 70),           # end 2 chrY: excluded, not chrM
+        ("chr1_KI270706v1_random", 30, "chrM", 40),  # scaffold + chrM: neither kept
+        ("chr10:87000000-91000000", 150, "19", 80),  # subregion contig + unprefixed autosome
+    ]
+    with open(path, "w") as fh:
+        fh.write("## pairs format v1.0\n#columns: " + " ".join(cols) + "\n")
+        for i, (c1, l1, c2, l2) in enumerate(rows):
+            p1, p2 = 1000 + i, 50_000 + i
+            fh.write("\t".join(map(str, [
+                f"r{i}", c1, p1, c2, p2, "+", "-", "UU", 150, 150,
+                p1, p2, p1 + l1 - 1, p2 - l2 + 1])) + "\n")
+
+
+@pytest.mark.parametrize("backend", ["python", "pandas", "polars"])
+def test_fraglen_distribution_is_nuclear_only(tmp_path, backend):
+    if backend == "polars" and not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    if backend == "pandas" and not microc_qc._PANDAS_AVAILABLE:
+        pytest.skip("pandas not installed")
+    pairs = tmp_path / "mixed.pairs"
+    _write_mixed_contig_pairs(pairs)
+    m = microc_qc.parse_pairs_file(pairs, progress=False, backend=backend)
+    assert m["fragment_length_distribution"] == {50: 1, 80: 1, 100: 1, 120: 1, 140: 1, 150: 1}
+    assert m["chrM_fragment_count"] == 2
+    assert m["fragment_count"] == 10
+    assert m["fragment_length_chromosomes"] == ["19", "chr1", "chr10:87000000-91000000",
+                                                "chr2", "chrX"]
+
+
+def test_fraglen_sampled_polars_is_nuclear_only(tmp_path):
+    if not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    pairs = tmp_path / "mixed.pairs"
+    _write_mixed_contig_pairs(pairs)
+    m = microc_qc.parse_pairs_file(pairs, progress=False, backend="polars", sample_size=5)
+    assert m["fragment_length_distribution"] == {50: 1, 80: 1, 100: 1, 120: 1, 140: 1, 150: 1}
+    assert m["chrM_fragment_count"] == 2
+
+
+def test_summary_nuclear_fraglen_metrics(tmp_path):
+    pairs = tmp_path / "mixed.pairs"
+    _write_mixed_contig_pairs(pairs)
+    out = tmp_path / "s.qc.json"
+    assert microc_qc.main(["--pairs", str(pairs), "--sample-ids", "s", "--backend", "python",
+                           "--out", str(out)]) == 0
+    d = json.loads(out.read_text())
+    met = d["metrics"]
+    assert met["nuclear_fragment_count"] == 6
+    assert met["chrM_fragment_count"] == 2
+    assert met["chrM_fraction"] == pytest.approx(0.2)
+    assert met["fraction_fragments_le80bp"] == pytest.approx(2 / 6)
+    assert met["fraction_fragments_ge_read_length"] == pytest.approx(1 / 6)
+    assert d["fragment_length_chrom_pattern"] == microc_qc._DEFAULT_FRAGLEN_CHROM_PATTERN
+    assert "chrM" not in d["fragment_length_chromosomes"]
+
+
+def test_fraglen_chrom_pattern_override(tmp_path):
+    pairs = tmp_path / "mixed.pairs"
+    _write_mixed_contig_pairs(pairs)
+    m = microc_qc.parse_pairs_file(pairs, progress=False, backend="python", chrom_pattern=r".")
+    assert sum(m["fragment_length_distribution"].values()) == 10
