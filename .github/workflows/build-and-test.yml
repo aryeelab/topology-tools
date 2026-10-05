@@ -2,6 +2,9 @@ name: Build Docker images and test pipeline
 
 on:
   push:
+    branches: ['**']
+    # Only repo-wide pipeline tags (v1.2, ...); component tags such as microc-qc/v1.0.0 are not Docker image versions
+    tags: ['v*']
 
 jobs:
 
@@ -39,7 +42,7 @@ jobs:
     # Build and push image to Google Container Registry
     - name: Build
       run: |-
-        GIT_TAG=$(git describe --tags)
+        GIT_TAG=$(git describe --tags --match 'v[0-9]*')
         echo "Building Docker image: ${{ matrix.IMAGE_NAME }}"
         echo "Using Git tag: $GIT_TAG"
         echo "Image will be tagged as: us-central1-docker.pkg.dev/aryeelab/docker/${{ matrix.IMAGE_NAME }}:$GIT_TAG"
@@ -67,7 +70,7 @@ jobs:
           
     - name: Change docker version from latest to current git commit tag (if version is dev)
       run: |
-        GIT_TAG=$(git describe --tags)
+        GIT_TAG=$(git describe --tags --match 'v[0-9]*')
         echo Replacing 'dev' with $GIT_TAG if necessary
         sed -i "s/String pipeline_ver = 'dev'/String pipeline_ver = '$GIT_TAG'/" microc.wdl
         echo Confirming version in microc.wdl:
@@ -104,7 +107,7 @@ jobs:
 
     - name: Pre-pull Docker images for testing
       run: |
-        GIT_TAG=$(git describe --tags)
+        GIT_TAG=$(git describe --tags --match 'v[0-9]*')
         echo "Pulling Docker images with tag: $GIT_TAG"
         # Wait a moment for images to be fully available in registry
         sleep 30
@@ -121,7 +124,7 @@ jobs:
     - name: Run pipeline to get full cromwell logs if pytest fails
       if: ${{ failure() }}
       run: |
-        GIT_TAG=$(git describe --tags)
+        GIT_TAG=$(git describe --tags --match 'v[0-9]*')
         echo "Ensuring Docker images are available for cromwell run"
         docker pull us-central1-docker.pkg.dev/aryeelab/docker/microc:$GIT_TAG || echo "Failed to pull microc image"
         docker pull us-central1-docker.pkg.dev/aryeelab/docker/juicer:$GIT_TAG || echo "Failed to pull juicer image"
