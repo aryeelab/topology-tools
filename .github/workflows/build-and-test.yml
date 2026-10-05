@@ -141,8 +141,9 @@ jobs:
         retention-days: 30
 
     - name: Show pytest logs
+      if: ${{ always() }}
       run: |           
         echo "STDOUT:"
-        cat /tmp/pytest_workflow/*/log.out
+        tail -n 200 /tmp/pytest_workflow/*/log.out
         echo "STDERR:"
-        cat /tmp/pytest_workflow/*/log.err    
+        tail -n 200 /tmp/pytest_workflow/*/log.err    
