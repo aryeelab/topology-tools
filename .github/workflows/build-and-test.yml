@@ -119,7 +119,10 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow
+        # Unit tests run separately: their tmp_path fixtures make pytest wipe --basetemp,
+        # which would delete the workflow outputs before pytest-workflow checks them
+        pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow --ignore tests/test_microc_qc.py
+        pytest tests/test_microc_qc.py
 
     - name: Run pipeline to get full cromwell logs if pytest fails
       if: ${{ failure() }}
@@ -142,7 +145,5 @@ jobs:
 
     - name: Show pytest logs
       if: ${{ always() }}
-      run: |           
-        ls -la /tmp/pytest_workflow /tmp/pytest_workflow/* || true
-        find / -xdev \( -name 'small-rcmc.mapped.pairs' -o -name 'ultima.r1.fastq.gz' -o -name log.out \) -not -path '*/cromwell-executions/*' 2>/dev/null || true
+      run: |
         for f in /tmp/pytest_workflow/*/log.out /tmp/pytest_workflow/*/log.err; do echo "== $f"; tail -n 100 "$f" || true; done
