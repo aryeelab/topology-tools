@@ -63,8 +63,7 @@ process microc_align {
 
     """
     #!/bin/bash
-    set -eo pipefail
-    trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
+    hostname >> /cluster/aryeelab/mark/failed_nodes.txt
 
     export TMPDIR=${tmpdir}
     echo ${fastq_r1} ${fastq_r2}
@@ -87,17 +86,17 @@ process microc_align {
         ls -lh
         cd ..
     fi
-
+        
         # Get genome index name
     BWT=`find "\$outdir" -name '*.bwt'`
     GENOME_INDEX_FA=`dirname "\$BWT"`/`basename "\$BWT" .bwt`
     echo "Using bwa index: \$GENOME_INDEX_FA"
-    PARSE_NPROC=\$(( ${bwa_cores} / 2 ))
     bwa mem -5SP -T0 -t${bwa_cores} \$GENOME_INDEX_FA ${fastq_r1} ${fastq_r2} | \
     pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
     --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
-    --nproc-in \${PARSE_NPROC} --nproc-out \${PARSE_NPROC} --chroms-path ${chrom_sizes} | \
+    --nproc-in 4 --nproc-out 4 --chroms-path ${chrom_sizes} | \
     pairtools sort --nproc ${bwa_cores} -o ${fastq_r1}.pairsam.gz
+    sed -i '\$d' /cluster/aryeelab/mark/failed_nodes.txt
     """
 }
 process mergepairs {
@@ -109,23 +108,22 @@ process mergepairs {
     path pairsams
     output:
     path "${sample_id}.mapped.pairs"
-    // path microc_stats
+    path "${sample_id}.stats.txt"
     path "${sample_id}.bam"
     path "${sample_id}.bam.bai"
     """
     #!/bin/bash
-    set -eo pipefail
-    trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
-
+    hostname >> /cluster/aryeelab/mark/failed_nodes.txt
     export TMPDIR=${tmpdir}
     echo ${pairsams}
-    pairtools merge --tmpdir ${tmpdir} -o merge.pairs.gz --nproc 4 sep=' ' ${pairsams}
-    pairtools dedup merge.pairs.gz --nproc-in 4 --nproc-out 4 --mark-dups --output-stats ${sample_id}.stats.txt | \
-    pairtools split --nproc-in 4 --nproc-out 4 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
-    samtools view -bS -@4 | \
-    samtools sort -@4 -o ${sample_id}.bam
-
+    pairtools merge --tmpdir ${tmpdir} -o merge.pairs.gz --nproc 12 sep=' ' ${pairsams}
+    pairtools dedup merge.pairs.gz --nproc-in 2 --nproc-out 8 --mark-dups --output-stats ${sample_id}.stats.txt | \
+    pairtools split --nproc-in 2 --nproc-out 8 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
+    samtools view -bS -@6 | \
+    samtools sort -@6 -o ${sample_id}.bam
+    
     samtools index ${sample_id}.bam
+    sed -i '\$d' /cluster/aryeelab/mark/failed_nodes.txt
     """
 }
 
@@ -155,7 +153,7 @@ workflow {
     // fastq_r1
     // fastq_r2
     main:
-        microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 6, "16GB", "500", "20", 0, params.tmpdir)
+        microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 8, "16GB", "500", "20", 0, params.tmpdir)
         mergepairs(params.tmpdir, params.sample_id, microc_align.out.collect())
         printf("Completed")
 }
