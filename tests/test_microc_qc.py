@@ -437,3 +437,56 @@ def test_version_in_cli_and_summary(tmp_path, capsys):
     out = tmp_path / "s.qc.json"
     microc_qc.main(["--pairs", str(pairs), "--sample-ids", "s", "--backend", "python", "--out", str(out)])
     assert json.loads(out.read_text())["microc_qc_version"] == microc_qc.__version__
+
+
+def _drop_read_len_columns(src, dst):
+    """Rewrite a .pairs file without read_len1/read_len2 (as written by plain pairtools parse)."""
+    with open(src) as fin, open(dst, "w") as fout:
+        keep = None
+        for line in fin:
+            if line.startswith("#columns:"):
+                cols = line.strip().split(": ", 1)[1].split()
+                keep = [i for i, c in enumerate(cols) if c not in ("read_len1", "read_len2")]
+                fout.write("#columns: " + " ".join(cols[i] for i in keep) + "\n")
+            elif line.startswith("#"):
+                fout.write(line)
+            else:
+                f = line.rstrip("\n").split("\t")
+                fout.write("\t".join(f[i] for i in keep) + "\n")
+
+
+@pytest.mark.parametrize("backend", ["polars", "pandas", "python"])
+def test_pairs_without_read_len_columns(tmp_path, backend):
+    """Pairs without read_len columns: read-length metrics null, everything else unchanged."""
+    if backend == "polars" and not microc_qc._POLARS_AVAILABLE:
+        pytest.skip("polars not installed")
+    if backend == "pandas" and not microc_qc._PANDAS_AVAILABLE:
+        pytest.skip("pandas not installed")
+    full = tmp_path / "full.pairs"
+    _write_synthetic_pairs(full)
+    bare = tmp_path / "bare.pairs"
+    _drop_read_len_columns(full, bare)
+    m_full = microc_qc.parse_pairs_file(full, progress=False, backend=backend)
+    m_bare = microc_qc.parse_pairs_file(bare, progress=False, backend=backend)
+    assert "read_length_columns" not in m_full
+    assert m_bare["read_length"] is None and m_bare["read_length_distribution"] == {}
+    assert m_bare.pop("read_length_columns") is False
+    for key in ("read_length", "read_length_distribution"):
+        m_full.pop(key), m_bare.pop(key)
+    assert m_bare == m_full
+
+    kw = dict(sample_id="s", bam_metrics=None, stats_metrics=None, cis_distance=10_000,
+              pairs_path=bare, bam_path=None, stats_path=None)
+    s_full = microc_qc.build_summary(pairs_metrics=microc_qc.parse_pairs_file(
+        full, progress=False, backend=backend), **kw)
+    s_bare = microc_qc.build_summary(pairs_metrics=microc_qc.parse_pairs_file(
+        bare, progress=False, backend=backend), **kw)
+    assert s_bare["metrics"]["read_length"] is None
+    assert s_bare["metrics"]["fraction_fragments_ge_read_length"] is None
+    assert s_bare["precision"]["read_length"] is None
+    assert "no read_len1/read_len2" in s_bare["sources"]["read_length"]
+    assert set(s_bare) == set(s_full) and set(s_bare["metrics"]) == set(s_full["metrics"])
+    for key in ("read_length", "fraction_fragments_ge_read_length"):
+        s_full["metrics"].pop(key), s_bare["metrics"].pop(key)
+    assert s_bare["metrics"] == s_full["metrics"]
+    assert s_bare["fragment_length_distribution"] == s_full["fragment_length_distribution"]

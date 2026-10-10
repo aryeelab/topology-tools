@@ -42,6 +42,9 @@ _BAM_SAMPLE_READS = 500_000  # primary reads to scan for unique-fraction and rea
 # chrM, chrY, unplaced/random/alt scaffolds and decoys are excluded.
 _DEFAULT_FRAGLEN_CHROM_PATTERN = r"^(chr)?([0-9]+|X)(:[0-9]+-[0-9]+)?$"
 _CHRM_NAMES = ("chrM", "chrMT", "M", "MT")
+# Optional pairs columns. pairtools parse writes read_len1/read_len2 only with
+# --add-columns read_len; without them read_length metrics are reported as unavailable (null).
+_READ_LEN_COLUMNS = ("read_len1", "read_len2")
 
 
 def _progress(msg: str, end: str = "") -> None:
@@ -133,7 +136,7 @@ def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
     """Read comment lines and return (column_names, required_columns_present)."""
     required_columns = {
         "chrom1", "pos1", "chrom2", "pos2", "pair_type",
-        "pos51", "pos52", "pos31", "pos32", "read_len1", "read_len2",
+        "pos51", "pos52", "pos31", "pos32",
     }
     columns: list[str] | None = None
     with open_textfile(path) as fh:
@@ -149,6 +152,17 @@ def _parse_pairs_header(path: Path) -> tuple[list[str], set[str]]:
             f"Pairs file {path} is missing required columns: {', '.join(sorted(missing))}"
         )
     return columns, required_columns
+
+
+def _has_read_len(columns: list[str]) -> bool:
+    """True if the pairs file has both read_len1 and read_len2 columns."""
+    return all(c in columns for c in _READ_LEN_COLUMNS)
+
+
+def _needed_columns(columns: list[str]) -> list[str]:
+    """Pairs columns the parsers read (read_len1/read_len2 only when present)."""
+    rl = ["read_len1", "read_len2"] if _has_read_len(columns) else []
+    return ["chrom1", "pos1", "chrom2", "pos2"] + rl + ["pos51", "pos52", "pos31", "pos32"]
 
 
 def _polars_metrics_from_df(
@@ -172,13 +186,13 @@ def _polars_metrics_from_df(
         {k: int(round(v * scale)) for k, v in raw_fl.items()} if scale > 1.0 else dict(raw_fl)
     )
 
-    rl1 = df["read_len1"].filter(df["read_len1"] > 0)
-    rl2 = df["read_len2"].filter(df["read_len2"] > 0)
-    rl_series = pl.concat([rl1.rename("rl"), rl2.rename("rl")])
-    rl_vc = rl_series.value_counts().sort("rl")
-    read_lengths: Counter[int] = Counter(
-        dict(zip(rl_vc["rl"].to_list(), rl_vc["count"].to_list()))
-    )
+    read_lengths: Counter[int] = Counter()
+    if "read_len1" in df.columns:
+        rl1 = df["read_len1"].filter(df["read_len1"] > 0)
+        rl2 = df["read_len2"].filter(df["read_len2"] > 0)
+        rl_series = pl.concat([rl1.rename("rl"), rl2.rename("rl")])
+        rl_vc = rl_series.value_counts().sort("rl")
+        read_lengths = Counter(dict(zip(rl_vc["rl"].to_list(), rl_vc["count"].to_list())))
 
     if progress:
         _progress(f"  pairs: {total_rows:,} reads (100%)", end="\n")
@@ -228,8 +242,7 @@ def _parse_pairs_polars(
     """
     import io as _io
 
-    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
-              "pos51", "pos52", "pos31", "pos32"]
+    needed = _needed_columns(columns)
     int32_cols = [c for c in needed if c not in ("chrom1", "chrom2")]
     schema_ov = {c: pl.Int32 for c in int32_cols}
 
@@ -329,8 +342,8 @@ def _parse_pairs_polars_batched(
     chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Exact (no sampling) polars path with memory bounded by chunk_bytes, not file size."""
-    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
-              "pos51", "pos52", "pos31", "pos32"]
+    needed = _needed_columns(columns)
+    has_rl = _has_read_len(columns)
     total_rows = 0
     cis_lr = 0
     fragment_lengths: Counter[int] = Counter()
@@ -345,11 +358,12 @@ def _parse_pairs_polars_batched(
              ((pl.col("pos2") - pl.col("pos1")).abs() >= cis_distance)).sum()
         ).item())
         chrm += _polars_fraglen_into(fragment_lengths, chroms, df, chrom_pattern)
-        rl = pl.concat([
-            df["read_len1"].filter(df["read_len1"] > 0).rename("v"),
-            df["read_len2"].filter(df["read_len2"] > 0).rename("v"),
-        ])
-        _value_counts_into(read_lengths, rl)
+        if has_rl:
+            rl = pl.concat([
+                df["read_len1"].filter(df["read_len1"] > 0).rename("v"),
+                df["read_len2"].filter(df["read_len2"] > 0).rename("v"),
+            ])
+            _value_counts_into(read_lengths, rl)
         if progress:
             milestone = (total_rows // (100 * _PROGRESS_INTERVAL)) * (100 * _PROGRESS_INTERVAL)
             if milestone > prev_milestone:
@@ -392,8 +406,16 @@ def _parse_pairs_pandas(
     chrom_pattern: str = _DEFAULT_FRAGLEN_CHROM_PATTERN,
 ) -> dict:
     """Fast path: parse pairs file using chunked pandas read_csv."""
-    needed = ["chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
-              "pos51", "pos52", "pos31", "pos32"]
+    needed = _needed_columns(columns)
+    has_rl = _has_read_len(columns)
+    dtypes = {
+        "chrom1": "str", "chrom2": "str",
+        "pos1": "int32", "pos2": "int32",
+        "pos51": "int32", "pos52": "int32",
+        "pos31": "int32", "pos32": "int32",
+    }
+    if has_rl:
+        dtypes.update({"read_len1": "int16", "read_len2": "int16"})
 
     # Pre-count for exact non_dup_reads and stride computation when sampling
     total_rows: int | None = None
@@ -418,13 +440,7 @@ def _parse_pairs_pandas(
         names=columns,
         usecols=needed,
         chunksize=1_000_000,
-        dtype={
-            "chrom1": "str", "chrom2": "str",
-            "pos1": "int32", "pos2": "int32",
-            "pos51": "int32", "pos52": "int32",
-            "pos31": "int32", "pos32": "int32",
-            "read_len1": "int16", "read_len2": "int16",
-        },
+        dtype=dtypes,
     )
 
     prev_milestone = 0
@@ -450,10 +466,11 @@ def _parse_pairs_pandas(
             (cis & ((chunk.pos2 - chunk.pos1).abs() >= cis_distance)).sum()
         )
 
-        r1 = chunk.read_len1[chunk.read_len1 > 0]
-        r2 = chunk.read_len2[chunk.read_len2 > 0]
-        for length, count in pd.concat([r1, r2]).value_counts().items():
-            read_lengths[int(length)] += int(count)
+        if has_rl:
+            r1 = chunk.read_len1[chunk.read_len1 > 0]
+            r2 = chunk.read_len2[chunk.read_len2 > 0]
+            for length, count in pd.concat([r1, r2]).value_counts().items():
+                read_lengths[int(length)] += int(count)
 
         k1 = chunk.chrom1.map(keep).astype(bool)
         k2 = chunk.chrom2.map(keep).astype(bool)
@@ -493,9 +510,8 @@ def _parse_pairs_python(
 ) -> dict:
     """Pure-Python fallback for parse_pairs_file (used when pandas is unavailable)."""
     column_index = {name: idx for idx, name in enumerate(columns)}
-    ci = {col: column_index[col] for col in
-          ("chrom1", "pos1", "chrom2", "pos2", "read_len1", "read_len2",
-           "pos51", "pos52", "pos31", "pos32")}
+    ci = {col: column_index[col] for col in _needed_columns(columns)}
+    has_rl = _has_read_len(columns)
 
     # Pre-count for exact total and stride computation when sampling
     total_rows: int | None = None
@@ -536,12 +552,13 @@ def _parse_pairs_python(
             if chrom1 == chrom2 and abs(pos2 - pos1) >= cis_distance:
                 cis_long_range_pairs += 1
 
-            read_len1 = int(fields[ci["read_len1"]])
-            read_len2 = int(fields[ci["read_len2"]])
-            if read_len1 > 0:
-                read_lengths[read_len1] += 1
-            if read_len2 > 0:
-                read_lengths[read_len2] += 1
+            if has_rl:
+                read_len1 = int(fields[ci["read_len1"]])
+                read_len2 = int(fields[ci["read_len2"]])
+                if read_len1 > 0:
+                    read_lengths[read_len1] += 1
+                if read_len2 > 0:
+                    read_lengths[read_len2] += 1
 
             pos51 = int(fields[ci["pos51"]])
             pos52 = int(fields[ci["pos52"]])
@@ -628,14 +645,22 @@ def parse_pairs_file(
     columns, _ = _parse_pairs_header(path)
     backend = resolve_backend(backend)
     print(f"  pairs: backend={backend}", file=sys.stderr)
+    has_rl = _has_read_len(columns)
+    if not has_rl:
+        print("  pairs: no read_len1/read_len2 columns; read_length metrics unavailable",
+              file=sys.stderr)
     if backend == "polars":
-        return _parse_pairs_polars(path, columns, cis_distance, progress, sample_size,
-                                   chrom_pattern)
-    if backend == "pandas":
-        return _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size,
-                                   chrom_pattern)
-    return _parse_pairs_python(path, columns, cis_distance, progress, sample_size,
-                               chrom_pattern)
+        metrics = _parse_pairs_polars(path, columns, cis_distance, progress, sample_size,
+                                      chrom_pattern)
+    elif backend == "pandas":
+        metrics = _parse_pairs_pandas(path, columns, cis_distance, progress, sample_size,
+                                      chrom_pattern)
+    else:
+        metrics = _parse_pairs_python(path, columns, cis_distance, progress, sample_size,
+                                      chrom_pattern)
+    if not has_rl:
+        metrics["read_length_columns"] = False  # internal flag for build_summary; not in qc.json
+    return metrics
 
 
 def is_unique_alignment(record, unique_mapq_min: int) -> bool:
@@ -856,6 +881,8 @@ def build_summary(
     """Assemble the final QC summary document."""
     read_length = pairs_metrics["read_length"]
     read_length_source = "pairs"
+    if not pairs_metrics.get("read_length_columns", True):
+        read_length_source = "unavailable — pairs file has no read_len1/read_len2 columns"
     if bam_metrics and bam_metrics.get("read_length") is not None:
         read_length = bam_metrics["read_length"]
         read_length_source = "bam"
@@ -924,7 +951,10 @@ def build_summary(
         )
 
     precision: dict = {
-        "read_length": "exact",
+        "read_length": (
+            "exact" if read_length is not None or pairs_metrics.get("read_length_columns", True)
+            else None
+        ),
         "total_reads": "exact" if stats_metrics else None,
         "total_mapped": "exact" if stats_metrics else None,
         "total_dups": "exact" if stats_metrics else None,
