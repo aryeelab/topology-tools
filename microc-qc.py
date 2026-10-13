@@ -31,7 +31,7 @@ try:
 except ImportError:
     _PANDAS_AVAILABLE = False
 
-__version__ = "1.0.0"  # microc-qc release; tagged microc-qc/v<version> (see RELEASING.md)
+__version__ = "1.0.1"  # microc-qc release; tagged microc-qc/v<version> (see RELEASING.md)
 
 _PROGRESS_INTERVAL = 500_000
 _DEFAULT_SAMPLE_SIZE = 0  # 0 = exact (no sampling); streaming aggregations make exact as
