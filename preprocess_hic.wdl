@@ -285,6 +285,7 @@ task hicpro_merge {
             docker: "aryeelab/hicpro:latest"
             bootDiskSizeGb: 20
             cpu: 4            
+            memory: "32GB"
             disks: "local-disk " + disk_gb + " SSD"        
         }
         
