@@ -1,0 +1,23 @@
+# HiC-Pro v3.1.0 dependencies, copied from nservant/HiC-Pro@v3.1.0 environment.yml
+# with the 'defaults' channel removed. HiC-Pro itself is built from the v3.1.0 tag.
+name: hicpro-3.1.0
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - conda-forge::python=3.8.10
+  - conda-forge::scipy=1.7.0
+  - conda-forge::numpy=1.21.1
+  - bioconda::iced=0.5.10
+  - bioconda::bx-python=0.8.11
+  - bioconda::pysam=0.16.0.1
+  - bioconda::cooler=0.8.11
+  - conda-forge::r-base=4.0.3
+  - conda-forge::r-ggplot2=3.3.5
+  - conda-forge::r-rcolorbrewer=1.1_2
+  - conda-forge::r-gridbase=0.4_7
+  - conda-forge::tbb=2020.2
+  - bioconda::bowtie2=2.4.4
+  - bioconda::samtools=1.12
+  - bioconda::multiqc=1.11

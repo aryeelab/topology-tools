@@ -1,0 +1,10 @@
+# Helpers for preprocess_hic.wdl native runs: Java for Cromwell/juicer_tools, cooler for mcool.
+name: hic-utils
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - openjdk=17
+  - cooler
+  - pigz
