@@ -457,6 +457,7 @@ task cooler {
     
         echo `date`: Choosing smallest bin size of ${bin_size}
         RES=$(echo "${bin_size}" | tr " " "\n" | sort -n | head -n1)
+        RESOLUTIONS=$(echo "${bin_size}" | tr " " "\n" | sort -n | paste -sd, -)   # zoomify to exactly the requested bins
         GS=${genome_size}; [ -e "$GS" ] || GS=${default="/annotation" annotation_dir}/${genome_size}
     
         echo `date`: Starting makebins
@@ -470,10 +471,10 @@ task cooler {
         cooler cload pairix bins.bed allValidPairs.sorted ${sample_id}.cool
 
         echo "`date`: Starting cooler zoomify (unbalanced)"
-        cooler zoomify --no-balance --out ${sample_id}.mcool ${sample_id}.cool
+        cooler zoomify --no-balance -r $RESOLUTIONS --out ${sample_id}.mcool ${sample_id}.cool
 
         echo "`date`: Starting cooler zoomify (balanced)"
-        cooler zoomify --balance --out ${sample_id}.balanced.mcool ${sample_id}.cool
+        cooler zoomify --balance -r $RESOLUTIONS --out ${sample_id}.balanced.mcool ${sample_id}.cool
 
         echo `date`: Done
     >>>
@@ -481,6 +482,7 @@ task cooler {
     runtime {
         continueOnReturnCode: false    
         docker: "aryeelab/cooler:latest"
+        cpu: 4
         memory: "60GB"
         disks: "local-disk " + disk_gb + " SSD"        
 
@@ -488,6 +490,7 @@ task cooler {
     
     output {
         File mcool = "${sample_id}.mcool"
+        File balanced_mcool = "${sample_id}.balanced.mcool"
         File monitoring_log = "monitoring.log"
     }
 }
