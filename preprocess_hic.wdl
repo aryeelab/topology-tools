@@ -201,14 +201,14 @@ task hicpro_align {
             cp $HP/config-hicpro.txt config-hicpro.txt
             CONFIG=$PWD/config-hicpro.txt
             sed -i "s|BOWTIE2_IDX_PATH.*|BOWTIE2_IDX_PATH = $IDX|" $CONFIG
-            sed -i "s/N_CPU.*/N_CPU = ${bowtie2_cores}/" $CONFIG
-            sed -i "s/PAIR1_EXT.*/PAIR1_EXT = ${read1_ext}/" $CONFIG
-            sed -i "s/PAIR2_EXT.*/PAIR2_EXT = ${read2_ext}/" $CONFIG
-            sed -i "s/MIN_MAPQ.*/MIN_MAPQ = ${min_mapq}/" $CONFIG
-            sed -i "s/GENOME_FRAGMENT.*/GENOME_FRAGMENT = ${genome_fragment}/" $CONFIG
-            sed -i "s/LIGATION_SITE.*/LIGATION_SITE = ${ligation_site}/" $CONFIG
-            sed -i "s/REFERENCE_GENOME.*/REFERENCE_GENOME = ${genome_name}/" $CONFIG
-            sed -i "s/GENOME_SIZE.*/GENOME_SIZE = ${genome_size}/" $CONFIG
+            sed -i "s|N_CPU.*|N_CPU = ${bowtie2_cores}|" $CONFIG
+            sed -i "s|PAIR1_EXT.*|PAIR1_EXT = ${read1_ext}|" $CONFIG
+            sed -i "s|PAIR2_EXT.*|PAIR2_EXT = ${read2_ext}|" $CONFIG
+            sed -i "s|MIN_MAPQ.*|MIN_MAPQ = ${min_mapq}|" $CONFIG
+            sed -i "s|GENOME_FRAGMENT.*|GENOME_FRAGMENT = ${genome_fragment}|" $CONFIG
+            sed -i "s|LIGATION_SITE.*|LIGATION_SITE = ${ligation_site}|" $CONFIG
+            sed -i "s|REFERENCE_GENOME.*|REFERENCE_GENOME = ${genome_name}|" $CONFIG
+            sed -i "s|GENOME_SIZE.*|GENOME_SIZE = ${genome_size}|" $CONFIG
 
             # Set up input fastq directory using symlinks to fastqs
             mkdir -p rawdata/${sample_id}
