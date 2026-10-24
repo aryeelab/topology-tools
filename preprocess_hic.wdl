@@ -337,6 +337,7 @@ task hicpro_contact_matrices {
         String bin_size
         String? hicpro_dir
         String? annotation_dir
+        String memory = "15GB"   # 5 kb genome-wide maps of deep libraries need much more (build_matrix + ICE)
 
         Int disk_gb
         File monitoring_script
@@ -378,7 +379,7 @@ task hicpro_contact_matrices {
             continueOnReturnCode: false
             docker: "aryeelab/hicpro:latest"
             bootDiskSizeGb: 20
-            memory: "15GB"
+            memory: memory
             disks: "local-disk " + disk_gb + " SSD"        
         }
 }
