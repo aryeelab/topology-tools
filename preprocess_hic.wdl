@@ -9,6 +9,13 @@ workflow preprocess_hic {
     
     File monitoring_script
 
+    # Native (non-Docker) runs: set these to a local HiC-Pro install, annotation dir and juicer_tools jar.
+    # Unset = paths inside the aryeelab/hicpro and aryeelab/cooler images (original behaviour).
+    String? hicpro_dir       # default /HiC-Pro
+    String? annotation_dir   # where genome_size is looked up if it is not an existing path; default /HiC-Pro/annotation (cooler: /annotation)
+    String? juicer_jar       # default /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+    Boolean? run_sparsehic   # default true; needs hicpro_to_sparsehic.R and its R packages (Docker image only)
+
     # Split the comma-separated string of fastq file names into an array
     call split_string_into_array as fastq1 {input: str = r1_fastq}
     call split_string_into_array as fastq2 {input: str = r2_fastq}
@@ -25,25 +32,27 @@ workflow preprocess_hic {
     call split_fastq_files  { input: sample_id = sample_id, r1_in = fastq1.out, r2_in = fastq2.out, num_lines_per_chunk = 4 * num_reads_per_chunk, num_pairs = count_pairs.num_pairs, disk_gb = 20 + sum_fastq_size.gb * 3 }
 
     # Run HiC-Pro align on each fastq chunk
-    scatter (fastq_pair in split_fastq_files.fastq_pairs) { call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq_pair.left, r2_fastq = fastq_pair.right, genome_size = genome_size, monitoring_script = monitoring_script} }
+    scatter (fastq_pair in split_fastq_files.fastq_pairs) { call hicpro_align {input: sample_id = sample_id, r1_fastq = fastq_pair.left, r2_fastq = fastq_pair.right, genome_size = genome_size, monitoring_script = monitoring_script, hicpro_dir = hicpro_dir} }
     
     # Merge the HiC-Pro align results 
-    call hicpro_merge { input: sample_id = sample_id, hicpro_out_tars = hicpro_align.hicpro_out, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 10}
+    call hicpro_merge { input: sample_id = sample_id, hicpro_out_tars = hicpro_align.hicpro_out, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 10, hicpro_dir = hicpro_dir}
 
     # Calculate the cis-long range percent metric
     call cis_long_range_percent {input: sample_id = sample_id, num_pairs = count_pairs.num_pairs, qc_stats = hicpro_merge.qc_stats}
     
     # Compute raw and ICE normalized hicpro contact matrices
-    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
+    call hicpro_contact_matrices {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3, hicpro_dir = hicpro_dir, annotation_dir = annotation_dir}
 
     # Generate Juicebox format .hic file
-    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+    call juicebox_hic {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb, hicpro_dir = hicpro_dir, annotation_dir = annotation_dir, juicer_jar = juicer_jar}
 
     # Generate sparseHiC format .rds file
-    call sparseHic {input: sample_id = sample_id, matrix_zip = hicpro_contact_matrices.matrix, genome_size = genome_size, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+    if (select_first([run_sparsehic, true])) {
+        call sparseHic {input: sample_id = sample_id, matrix_zip = hicpro_contact_matrices.matrix, genome_size = genome_size, genome_id = genome_id, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb}
+    }
 
     # Generate balanced and unbalanced cooler files
-    call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3}
+    call cooler {input: sample_id = sample_id, all_valid_pairs = hicpro_merge.all_valid_pairs, genome_size = genome_size, bin_size=bin_size, monitoring_script = monitoring_script, disk_gb = 30 + sum_fastq_size.gb * 3, annotation_dir = annotation_dir}
 }
 
 task split_string_into_array {
@@ -73,10 +82,16 @@ task split_fastq_files {
     Int num_pairs
     Int disk_gb
     
-    command {
-        zcat -f ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-        zcat -f ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter='gzip > $FILE.gz' - ${sample_id}-
-    }
+    command <<<
+        set -eo pipefail
+        # pigz if available (native runs), else gzip; R1 and R2 are split concurrently. Chunk contents are unchanged.
+        if command -v pigz > /dev/null; then GZ="pigz -p 2"; else GZ="gzip"; fi
+        zcat -f ${sep=' ' r1_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R1.fastq' --filter="$GZ > \$FILE.gz" - ${sample_id}- &
+        P1=$!
+        zcat -f ${sep=' ' r2_in} | split -d --suffix-length=3 -l ${num_lines_per_chunk} --additional-suffix='_R2.fastq' --filter="$GZ > \$FILE.gz" - ${sample_id}- &
+        P2=$!
+        wait $P1; wait $P2
+    >>>
     
      runtime {
         continueOnReturnCode: false
@@ -145,8 +160,10 @@ task hicpro_align {
         File r2_fastq
         String sample_id
         
-        File genome_index_tgz
+        File? genome_index_tgz
+        String? genome_index_dir   # native runs: directory holding <genome_name>.*.bt2 (skips the per-chunk untar)
         String genome_name
+        String? hicpro_dir
         String genome_fragment
         String genome_size
         String ligation_site
@@ -171,12 +188,19 @@ task hicpro_align {
             chmod u+x ${monitoring_script}
             ${monitoring_script} > monitoring.log &
 
-            mkdir $PWD/bowtie2_index
-            tar zxvf ${genome_index_tgz} -C $PWD/bowtie2_index
+            HP=${default="/HiC-Pro" hicpro_dir}
+            if [ -n "${genome_index_dir}" ]; then
+                IDX=${genome_index_dir}
+            else
+                mkdir $PWD/bowtie2_index
+                tar zxvf ${genome_index_tgz} -C $PWD/bowtie2_index
+                IDX=$PWD/bowtie2_index
+            fi
 
-            # Set up hicpro config file
-            CONFIG=/HiC-Pro/config-hicpro.txt
-            sed -i "s|BOWTIE2_IDX_PATH.*|BOWTIE2_IDX_PATH = $PWD/bowtie2_index|" $CONFIG
+            # Set up hicpro config file (task-local copy, so parallel tasks never edit a shared install)
+            cp $HP/config-hicpro.txt config-hicpro.txt
+            CONFIG=$PWD/config-hicpro.txt
+            sed -i "s|BOWTIE2_IDX_PATH.*|BOWTIE2_IDX_PATH = $IDX|" $CONFIG
             sed -i "s/N_CPU.*/N_CPU = ${bowtie2_cores}/" $CONFIG
             sed -i "s/PAIR1_EXT.*/PAIR1_EXT = ${read1_ext}/" $CONFIG
             sed -i "s/PAIR2_EXT.*/PAIR2_EXT = ${read2_ext}/" $CONFIG
@@ -200,7 +224,7 @@ task hicpro_align {
     
             # Run HiC-Pro
             # all_sub : configure bowtie_global bowtie_local bowtie_combine mapping_stat bowtie_pairing mapped_2hic_fragments 
-            make --file //HiC-Pro/scripts/Makefile CONFIG_FILE=/HiC-Pro/config-hicpro.txt CONFIG_SYS=//HiC-Pro/config-system.txt all_sub 2>&1
+            make --file $HP/scripts/Makefile CONFIG_FILE=$CONFIG CONFIG_SYS=$HP/config-system.txt all_sub 2>&1
             
             #partname=$(echo $(basename imr90-rep1/part-01_R1.fastq.gz) | sed 's/_R1.fastq.gz//')
             tar -cvpf hicpro_out.tar bowtie_results/bwt2 hic_results logs
@@ -226,6 +250,7 @@ task hicpro_align {
 task hicpro_merge {
     String sample_id
     Array[File] hicpro_out_tars
+    String? hicpro_dir
     
     File monitoring_script
     Int disk_gb
@@ -240,7 +265,9 @@ task hicpro_merge {
             done;
             
             # Run HiC-Pro
-            /HiC-Pro/bin/HiC-Pro -s merge_persample -i hic_results/data -o . -c /HiC-Pro/config-hicpro.txt
+            HP=${default="/HiC-Pro" hicpro_dir}
+            cp $HP/config-hicpro.txt config-hicpro.txt
+            $HP/bin/HiC-Pro -s merge_persample -i hic_results/data -o . -c $PWD/config-hicpro.txt
     
             # Zip qc stats
             zip -j qc_stats.zip \
@@ -300,6 +327,8 @@ task hicpro_contact_matrices {
         
         String genome_size
         String bin_size
+        String? hicpro_dir
+        String? annotation_dir
 
         Int disk_gb
         File monitoring_script
@@ -309,15 +338,18 @@ task hicpro_contact_matrices {
             chmod u+x ${monitoring_script}
             ${monitoring_script} > monitoring.log &
 
-            CONFIG=/HiC-Pro/config-hicpro.txt
+            HP=${default="/HiC-Pro" hicpro_dir}
+            GS=${genome_size}; [ -e "$GS" ] || GS=${default="/HiC-Pro/annotation" annotation_dir}/${genome_size}
+            cp $HP/config-hicpro.txt config-hicpro.txt
+            CONFIG=$PWD/config-hicpro.txt
             sed -i "s/BIN_SIZE.*/BIN_SIZE = ${bin_size}/" $CONFIG
-            sed -i "s/GENOME_SIZE.*/GENOME_SIZE = ${genome_size}/" $CONFIG
+            sed -i "s|GENOME_SIZE.*|GENOME_SIZE = $GS|" $CONFIG
 
             mkdir -p pairs/${sample_id}
             ln -sf   ${all_valid_pairs} pairs/${sample_id}/
                         
             # Run HiC-Pro
-            /HiC-Pro/bin/HiC-Pro -s build_contact_maps -s ice_norm -i pairs -o hicpro_out -c /HiC-Pro/config-hicpro.txt
+            $HP/bin/HiC-Pro -s build_contact_maps -s ice_norm -i pairs -o hicpro_out -c $CONFIG
             
             # Zip contact matrices
             zip -rj matrix.zip hicpro_out/hic_results/matrix/${sample_id}/iced hicpro_out/hic_results/matrix/${sample_id}/raw
@@ -347,6 +379,9 @@ task juicebox_hic {
     String sample_id
     File all_valid_pairs
     String genome_size
+    String? hicpro_dir
+    String? annotation_dir
+    String? juicer_jar
     
     Int disk_gb
     File monitoring_script
@@ -355,7 +390,9 @@ task juicebox_hic {
         chmod u+x ${monitoring_script}
         ${monitoring_script} > monitoring.log &
 
-        /HiC-Pro/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g /HiC-Pro/annotation/${genome_size} -j /usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar
+        HP=${default="/HiC-Pro" hicpro_dir}
+        GS=${genome_size}; [ -e "$GS" ] || GS=${default="/HiC-Pro/annotation" annotation_dir}/${genome_size}
+        $HP/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g $GS -j ${default="/usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar" juicer_jar}
         # Rename output .hic file
         mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
     >>>
@@ -408,6 +445,7 @@ task cooler {
     File all_valid_pairs
     String genome_size
     String bin_size
+    String? annotation_dir
     
     Int disk_gb  
     File monitoring_script
@@ -418,14 +456,15 @@ task cooler {
         ${monitoring_script} > monitoring.log &
     
         echo `date`: Choosing smallest bin size of ${bin_size}
-        RES=$(echo "${bin_size}" | tr " " "\n" | sort | head -n1)
+        RES=$(echo "${bin_size}" | tr " " "\n" | sort -n | head -n1)
+        GS=${genome_size}; [ -e "$GS" ] || GS=${default="/annotation" annotation_dir}/${genome_size}
     
         echo `date`: Starting makebins
-        cooler makebins /annotation/${genome_size} $RES > bins.bed
+        cooler makebins $GS $RES > bins.bed
 
         echo `date`: Starting cooler csort
         cooler csort --nproc 3 --chrom1 2 --pos1 3 --chrom2 5 --pos2 6 \
-             -o allValidPairs.sorted  ${all_valid_pairs} /annotation/${genome_size}
+             -o allValidPairs.sorted  ${all_valid_pairs} $GS
 
         echo `date`: Starting cooler cload pairix
         cooler cload pairix bins.bed allValidPairs.sorted ${sample_id}.cool

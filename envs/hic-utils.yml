@@ -1,4 +1,6 @@
-# Helpers for preprocess_hic.wdl native runs: Java for Cromwell/juicer_tools, cooler for mcool.
+# Helpers for running preprocess_hic.wdl natively: Java for Cromwell/juicer_tools,
+# pigz for FASTQ chunking, pairix + htslib (bgzip) for cooler csort.
+# cooler itself comes from the HiC-Pro env (0.8.11, as in the original Docker image).
 name: hic-utils
 channels:
   - conda-forge
@@ -6,5 +8,6 @@ channels:
   - nodefaults
 dependencies:
   - openjdk=17
-  - cooler
   - pigz
+  - pairix
+  - htslib
