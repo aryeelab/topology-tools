@@ -459,6 +459,7 @@ task cooler {
     File monitoring_script
 
     command <<<
+        set -eo pipefail
 
         chmod u+x ${monitoring_script}
         ${monitoring_script} > monitoring.log &
@@ -479,7 +480,9 @@ task cooler {
         cooler cload pairix bins.bed allValidPairs.sorted ${sample_id}.cool
 
         echo "`date`: Starting cooler zoomify (unbalanced)"
-        cooler zoomify --no-balance -r $RESOLUTIONS --out ${sample_id}.mcool ${sample_id}.cool
+        # older cooler (e.g. 0.8.x) has no --no-balance flag; balancing is off by default there
+        if cooler zoomify --help | grep -- "--no-balance" > /dev/null; then NOBAL="--no-balance"; else NOBAL=""; fi
+        cooler zoomify $NOBAL -r $RESOLUTIONS --out ${sample_id}.mcool ${sample_id}.cool
 
         echo "`date`: Starting cooler zoomify (balanced)"
         cooler zoomify --balance -r $RESOLUTIONS --out ${sample_id}.balanced.mcool ${sample_id}.cool
