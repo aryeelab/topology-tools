@@ -13,6 +13,7 @@ dependencies:
   - bioconda::bx-python=0.8.11
   - bioconda::pysam=0.16.0.1
   - bioconda::cooler=0.8.11
+  - conda-forge::pandas=1.3.5   # not pinned upstream; cooler 0.8.11 fails to import with pandas>=2 (is_categorical removed)
   - conda-forge::r-base=4.0.3
   - conda-forge::r-ggplot2=3.3.5
   - conda-forge::r-rcolorbrewer=1.1_2
