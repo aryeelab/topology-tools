@@ -270,10 +270,16 @@ task hicpro_merge {
             $HP/bin/HiC-Pro -s merge_persample -i hic_results/data -o . -c $PWD/config-hicpro.txt
     
             # Zip qc stats
-            zip -j qc_stats.zip \
+            # HiC-Pro 2.x keeps these next to the data; 3.x writes them to hic_results/stats/<sample>/
+            zip -j qc_stats.zip $(ls \
                 bowtie_results/bwt2/${sample_id}/${sample_id}.mpairstat \
                 hic_results/data/${sample_id}/${sample_id}_allValidPairs.mergestat \
-                hic_results/data/${sample_id}/${sample_id}.mRSstat
+                hic_results/data/${sample_id}/${sample_id}.mRSstat \
+                hic_results/stats/${sample_id}/${sample_id}.mpairstat \
+                hic_results/stats/${sample_id}/${sample_id}_allValidPairs.mergestat \
+                hic_results/stats/${sample_id}/${sample_id}.mRSstat \
+                hic_results/stats/${sample_id}/${sample_id}_R1.mmapstat \
+                hic_results/stats/${sample_id}/${sample_id}_R2.mmapstat 2> /dev/null)
             
             # Zip logs
             zip -j logs.zip logs/${sample_id}/*
@@ -291,7 +297,8 @@ task hicpro_merge {
         
     output {
             File monitoring_log = "monitoring.log"
-            File all_valid_pairs = "hic_results/data/${sample_id}/${sample_id}_allValidPairs"
+            Array[File] all_valid_pairs_found = glob("hic_results/data/${sample_id}/${sample_id}[._]allValidPairs")
+            File all_valid_pairs = all_valid_pairs_found[0]
             File qc_stats = "qc_stats.zip"
             File hicpro_logs = "logs.zip"
     }
@@ -395,7 +402,7 @@ task juicebox_hic {
         GS=${genome_size}; [ -e "$GS" ] || GS=${default="/HiC-Pro/annotation" annotation_dir}/${genome_size}
         $HP/bin/utils/hicpro2juicebox.sh -i ${all_valid_pairs} -g $GS -j ${default="/usr/local/juicer/juicer_tools.1.7.6_jcuda.0.8.jar" juicer_jar}
         # Rename output .hic file
-        mv ${sample_id}_allValidPairs.hic ${sample_id}.hic
+        mv $(basename ${all_valid_pairs}).hic ${sample_id}.hic
     >>>
     output {
         File juicebox_hic = "${sample_id}.hic"
