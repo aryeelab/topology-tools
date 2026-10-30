@@ -174,7 +174,7 @@ workflow {
 }
 
 // Provenance next to the outputs: pipeline version and commit, parameters, inputs, tool versions, run metadata.
-// With params.dataset_dir set, also write a manifest row for foci-3d-dfci run_dataset.sh.
+// With params.dataset_dir set, also write a manifest row for the FOCI-3D batch pipeline (dataset_dir, pairs, sample_id, assay, stats).
 workflow.onComplete {
     def outdir = new File(params.outdir.toString())
     def sid = params.sample_id

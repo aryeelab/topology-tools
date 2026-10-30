@@ -27,16 +27,16 @@ Build envs as a batch job: on network storage one can take tens of minutes.
 1. Edit the **User configuration** block at the top of `microc-nf-submit.sh`:
 
    ```bash
-   SAMPLEID=221014_LPS141_MicroC_RepB          # sample identifier
-   BWA_INDEX=/path/to/hg38.tgz                 # BWA index tarball
-   CHROM_SIZES=/path/to/hg38.chrom.sizes       # chromosome sizes file
-   FASTQ_GLOB="/path/to/fastq/${SAMPLEID}/*R{1,2}*.fastq.gz"
-   DATASET_DIR=/aryeelab/data/<lab>/<dataset>   # lab dataset dir; empty = keep outputs in OUTDIR
-   ASSAY=microc                                 # microc | rcmc
-   MAPQ=30                                      # pairtools parse --min-mapq
-   CHUNK_READS=30000000                         # reads per FASTQ chunk
-   OUTDIR=/cluster/aryeelab/${USER}/${SAMPLEID} # run dir: provenance, manifest (shared filesystem)
-   TMPDIR_NF=/cluster/aryeelab/${USER}/tmp      # temp dir (shared filesystem)
+   SAMPLEID=221014_LPS141_MicroC_RepB          # sample identifier                       (required)
+   BWA_INDEX=/path/to/hg38.tgz                 # BWA index tarball or indexed FASTA       (required)
+   CHROM_SIZES=/path/to/hg38.chrom.sizes       # chromosome sizes file                    (required)
+   FASTQ_GLOB="/path/to/fastq/${SAMPLEID}/*R{1,2}*.fastq.gz"                             # (required)
+   OUTDIR=/path/to/scratch/${SAMPLEID}         # run dir: provenance, manifest (shared FS) (required)
+   TMPDIR_NF=/path/to/scratch/tmp              # temp dir (shared filesystem)             (required)
+   DATASET_DIR=/path/to/<dataset>              # dataset dir; empty = keep outputs in OUTDIR
+   ASSAY=microc                                # microc | rcmc
+   MAPQ=30                                     # pairtools parse --min-mapq
+   CHUNK_READS=30000000                        # reads per FASTQ chunk
    ```
 
 2. Submit:
@@ -45,8 +45,8 @@ Build envs as a batch job: on network storage one can take tens of minutes.
    bash microc-nf-submit.sh
    ```
 
-Each of these can also be set in the environment instead (`SAMPLEID=… bash microc-nf-submit.sh`;
-`DATASET_DIR=` empty keeps outputs in OUTDIR). The script checks the env has pairtools 1.1.3, manages the Slurm master job, and passes all paths to Nextflow. No other configuration is needed.
+Each of these can also be set in the environment instead (`SAMPLEID=… bash microc-nf-submit.sh`).
+There are no site defaults: the script stops if a required setting is empty. It checks the env has pairtools 1.1.3, manages the Slurm master job, and passes all paths to Nextflow. No other configuration is needed.
 
 ## What it does
 
@@ -56,8 +56,12 @@ Each of these can also be set in the environment instead (`SAMPLEID=… bash mic
 4. Copies pairs, BAM and dedup stats to `DATASET_DIR/{pairs,bam,qc}` (or `OUTDIR`), never overwriting
    existing files, and writes provenance to `OUTDIR`
 
+Intermediate files (FASTQ chunks, per-chunk pairs, merged pairs) go to the Nextflow work dir,
+`OUTDIR/work` (or `$NXF_WORK`). For a deep library this is hundreds of GB: put `OUTDIR` on scratch and delete
+`work/` once the outputs are checked.
+
 The parse options follow the FOCI-3D looping-factors paper (aryeelab/foci-3d-looping-factors, `Protocol.Rmd`),
-except MAPQ: the lab standard is 30 (the paper used 40; lab pairs made with this pipeline before 2026-10 used 20 with pairtools 0.3.0; the Hansen-lab and Ido RCMC pairs were made outside it with bwa-mem2 and pairtools 1.1.2 at 40)
+except MAPQ (default 30; the paper used 40; this pipeline used 20 with pairtools 0.3.0 before 1.0.0)
 and the extra `dist_to_5,dist_to_3,read_len` columns, which microc-qc uses. The MAPQ a pairs file was made with
 is in its header (`#samheader: @PG ID:pairtools_parse … --min-mapq N`).
 
@@ -66,7 +70,7 @@ From 1.0.0 the pipeline uses pairtools 1.1.3 instead of 0.3.0. On 4M read pairs 
 (a different duplicate chosen), and microc-qc's ≤80 bp fraction was 13.10% vs 13.11%. pairtools 1.x
 labels walk-rescued pairs `UU` where 0.3.0 used `uu`/`Uu`/`uU`; filter on `pair_type` with that in mind.
 
-Up to ~66 align jobs run in parallel (400 CPU QOS limit ÷ 6 CPUs/job).
+Align jobs (6 CPUs each) run in parallel up to your cluster's limits; a 400-CPU QOS allows ~66.
 
 ## Outputs
 
@@ -78,19 +82,20 @@ DATASET_DIR/                       (or OUTDIR when DATASET_DIR is empty)
 OUTDIR/
   {sample_id}.preprocess.provenance.json  # pipeline version + commit, params, input FASTQs, tool versions, run times
   {sample_id}.tool_versions.txt
-  {sample_id}.foci_manifest.tsv           # one foci-3d-dfci manifest row (only with DATASET_DIR)
+  {sample_id}.foci_manifest.tsv           # one FOCI-3D batch manifest row (only with DATASET_DIR)
 ```
 
 Outputs are copied, not symlinked: earlier versions used Nextflow's default `symlink` publish mode, so files in
-`OUTDIR` were links into the work directory on `/cluster` scratch. Check old runs with `ls -l` before deleting
+`OUTDIR` were links into the Nextflow work directory on scratch. Check old runs with `ls -l` before deleting
 `work/`.
 
-Next step: counts and QC with the foci-3d-dfci pipeline,
-`run_dataset.sh RUN OUTDIR/{sample_id}.foci_manifest.tsv 1` (concatenate rows for several samples).
+The manifest row is `dataset_dir  pairs  sample_id  assay  stats` (tab-separated), the input format of a
+FOCI-3D counts + QC batch run; concatenate rows for several samples. Pass `qc/{sample_id}.stats.txt` to
+`microc-qc.py --stats` (it holds pre-dedup totals; stats regenerated from `.mapped.pairs` do not).
 
 ## Re-running / resuming
 
-Re-run the same command. Nextflow's `-resume` flag is set by default — completed tasks are skipped. Note: `splitFastq` creates new temp files each run, so align jobs are not cached across submissions; only `mergepairs` benefits from resume.
+Re-run the same command (same `OUTDIR`, so the same work dir). Nextflow's `-resume` flag is set by default — completed tasks are skipped. Note: `splitFastq` creates new temp files each run, so align jobs are not cached across submissions; only `mergepairs` benefits from resume.
 
 ## Bad node exclusion
 

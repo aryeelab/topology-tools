@@ -1,0 +1,19 @@
+# A microc-preprocess release tag microc-preprocess/vX.Y.Z must match manifest.version in nf/nextflow.config
+# and PIPELINE_VERSION in microc-nf-submit.sh.
+name: microc-preprocess-version-check
+on:
+  push:
+    tags: ["microc-preprocess/v*"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches pipeline versions
+        run: |
+          tag=${GITHUB_REF_NAME#microc-preprocess/v}
+          nf=$(sed -n "s/^ *version *= *'\([^']*\)'.*/\1/p" nf/nextflow.config)
+          sh=$(sed -n 's/^PIPELINE_VERSION=\(.*\)$/\1/p' microc-nf-submit.sh)
+          echo "tag=$tag nextflow.config=$nf microc-nf-submit.sh=$sh"
+          [ "$tag" = "$nf" ] && [ "$tag" = "$sh" ] || { echo "::error::tag microc-preprocess/v$tag does not match nextflow.config $nf / microc-nf-submit.sh $sh"; exit 1; }
+          [ -f "envs/microc-preprocess-$tag.linux-64.explicit.txt" ] || { echo "::error::missing envs/microc-preprocess-$tag.linux-64.explicit.txt"; exit 1; }

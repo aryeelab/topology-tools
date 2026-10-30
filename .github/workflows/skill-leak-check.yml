@@ -1,0 +1,16 @@
+# Public agent skills must not mention lab-internal hosts, paths or credentials.
+# Site-specific instructions live in the private aryeelab/aryeelab-skills repo.
+name: skill-leak-check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan skills for internal references
+        run: |
+          pattern='\b(kraken[0-9]*|libra|lyra|dfci)\b|(^|[[:space:]"`(=])(/aryeelab|/homes[0-9]|/cluster/|~/software)|id_ecdsa|id_rsa|\.harvard\.edu'
+          if grep -rniE "$pattern" skills; then
+            echo "::error::Internal reference found in a public skill (see matches above)"
+            exit 1
+          fi
