@@ -33,9 +33,12 @@
     //     exit
     // fi
 
+// An unmatched glob gives an empty channel, and Nextflow would then report success with no outputs.
+if (!file(params.fq_input)) error "No FASTQs match --fq_input ${params.fq_input}"
+
 Channel
-    .fromFilePairs(params.fq_input, flat:true)
-    .splitFastq(by: 30000000, pe:true, file:true)
+    .fromFilePairs(params.fq_input, flat:true, checkIfExists:true)
+    .splitFastq(by: params.chunk_reads, pe:true, file:true)
     .set {fastq_splits}
 process microc_align {
     // clusterOptions '-x node26,node20,node14'
@@ -104,9 +107,12 @@ process microc_align {
 }
 process mergepairs {
     // clusterOptions '-x node26,node20,node14'
-    publishDir params.bamdir ?: params.outdir, pattern: "*.bam*"
-    publishDir params.pairsdir ?: params.outdir, pattern: "*.mapped.pairs"
-    publishDir params.outdir, pattern: "*.stats.txt"
+    // mode 'copy': the default ('symlink') leaves outputs as links into the Nextflow work dir on scratch.
+    // overwrite: false: never replace existing lab pairs/BAM/stats.
+    publishDir params.bamdir ?: params.outdir, pattern: "*.bam*", mode: 'copy', overwrite: false
+    publishDir params.pairsdir ?: params.outdir, pattern: "*.mapped.pairs", mode: 'copy', overwrite: false
+    publishDir params.statsdir ?: params.outdir, pattern: "*.stats.txt", mode: 'copy', overwrite: false
+    publishDir params.outdir, pattern: "*.tool_versions.txt", mode: 'copy', overwrite: false
     input:
     path tmpdir
     val sample_id
@@ -116,6 +122,8 @@ process mergepairs {
     // path microc_stats
     path "${sample_id}.bam"
     path "${sample_id}.bam.bai"
+    path "${sample_id}.stats.txt"
+    path "${sample_id}.tool_versions.txt"
     """
     #!/bin/bash
     set -eo pipefail
@@ -123,13 +131,14 @@ process mergepairs {
 
     export TMPDIR=${tmpdir}
     echo ${pairsams}
-    pairtools merge --tmpdir ${tmpdir} -o merge.pairs.gz --nproc 4 sep=' ' ${pairsams}
+    pairtools merge --tmpdir ${tmpdir} -o merge.pairs.gz --nproc 4 ${pairsams}
     pairtools dedup merge.pairs.gz --nproc-in 4 --nproc-out 4 --mark-dups --output-stats ${sample_id}.stats.txt | \
     pairtools split --nproc-in 4 --nproc-out 4 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
     samtools view -bS -@4 | \
     samtools sort -@4 -o ${sample_id}.bam
 
     samtools index ${sample_id}.bam
+    { pairtools --version; { bwa 2>&1 || true; } | grep Version; samtools --version | head -1; } > ${sample_id}.tool_versions.txt
     """
 }
 
@@ -159,7 +168,44 @@ workflow {
     // fastq_r1
     // fastq_r2
     main:
-        microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 6, "16GB", "500", "20", 0, params.tmpdir)
+        microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 6, "16GB", "500", params.mapq, 0, params.tmpdir)
         mergepairs(params.tmpdir, params.sample_id, microc_align.out.collect())
         printf("Completed")
+}
+
+// Provenance next to the outputs: pipeline version and commit, parameters, inputs, tool versions, run metadata.
+// With params.dataset_dir set, also write a manifest row for foci-3d-dfci run_dataset.sh.
+workflow.onComplete {
+    def outdir = new File(params.outdir.toString())
+    def sid = params.sample_id
+    def vfile = new File(outdir, "${sid}.tool_versions.txt")
+    def pairsdir = (params.pairsdir ?: params.outdir).toString()
+    def statsdir = (params.statsdir ?: params.outdir).toString()
+    def fq = file(params.fq_input)
+    def fastqs = (fq instanceof List ? fq : [fq]).collect { f -> [path: f.toString(), size: f.size(), mtime: new Date(f.lastModified()).format("yyyy-MM-dd'T'HH:mm:ssXXX")] }
+    def prov = [
+        pipeline: 'microc-preprocess',
+        pipeline_version: workflow.manifest.version,
+        git_commit: params.git_commit,
+        success: workflow.success,
+        started: workflow.start.toString(),
+        completed: workflow.complete.toString(),
+        duration: workflow.duration.toString(),
+        nextflow_version: workflow.nextflow.version.toString(),
+        session_id: workflow.sessionId.toString(),
+        command_line: workflow.commandLine,
+        params: [mapq: params.mapq, walks_policy: '5unique', max_inter_align_gap: 30,
+                 add_columns: 'pos5,pos3,dist_to_5,dist_to_3,read_len', chunk_reads: params.chunk_reads,
+                 bwa_index: params.bwa_index.toString(), chrom_sizes: params.chrom_sizes.toString()],
+        inputs: fastqs,
+        outputs: [pairs: "${pairsdir}/${sid}.mapped.pairs", bam: "${(params.bamdir ?: params.outdir)}/${sid}.bam",
+                  stats: "${statsdir}/${sid}.stats.txt"],
+        tool_versions: vfile.exists() ? vfile.readLines() : []
+    ]
+    outdir.mkdirs()
+    new File(outdir, "${sid}.preprocess.provenance.json").text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(prov)) + "\n"
+    if (workflow.success && params.dataset_dir && new File("${pairsdir}/${sid}.mapped.pairs").exists()) {
+        new File(outdir, "${sid}.foci_manifest.tsv").text =
+            [params.dataset_dir, "${pairsdir}/${sid}.mapped.pairs", sid, params.assay, "${statsdir}/${sid}.stats.txt"].join('\t') + "\n"
+    }
 }

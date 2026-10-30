@@ -1,0 +1,19 @@
+# Build spec for the microc-preprocess Nextflow pipeline (FASTQ -> pairs).
+# Releases ship the exact env they were tested in as
+#   envs/microc-preprocess-<version>.linux-64.explicit.txt
+# Install from that file, not from this one (see RELEASING.md).
+#
+# pairtools 1.1.3 replaces 0.3.0 from 1.0.0 on. On a 4M read-pair Caov-3 test at MAPQ 30 every
+# pair kept by both versions was identical and 0.06% were kept by only one (different duplicate
+# chosen). 1.x labels walk-rescued pairs UU where 0.3.0 used uu/Uu/uU.
+name: microc-preprocess
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pairtools=1.1.3
+  - bwa=0.7.18
+  - samtools=1.21
+  - nextflow=24.10.6
+  - openjdk=17
