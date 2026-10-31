@@ -47,7 +47,8 @@ RUN pip3 install "numpy<1.24" scipy pandas pysam==0.19.1 deeptools
 # We use a patched version of pairtools since Mapping has moved from collections to collections.abc
 # (See, for example: https://github.com/tensorflow/tensorboard/issues/5478)
 # Need to install cython first and ensure proper compilation of extensions
-RUN pip3 install cython click nose
+# pairtools v0.3.0p does not compile with Cython 3 ("C struct/union member cannot be a memory view")
+RUN pip3 install "cython<3" click nose
 RUN cd /tmp && \
     git clone https://github.com/aryeelab/pairtools.git && \
     cd pairtools && \
