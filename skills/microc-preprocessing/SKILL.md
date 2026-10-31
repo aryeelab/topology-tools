@@ -6,7 +6,7 @@ description: Preprocess paired-end Micro-C or Region Capture Micro-C (RCMC) FAST
 # Micro-C preprocessing (FASTQ → pairs)
 
 The recipe of the `microc-preprocess` component of https://github.com/aryeelab/topology-tools
-(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.0.1). It is written so you can
+(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.0.2). It is written so you can
 run it with whatever workflow manager and scheduler you use.
 
 ## Software

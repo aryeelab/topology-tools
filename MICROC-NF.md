@@ -95,6 +95,8 @@ FOCI-3D counts + QC batch run; concatenate rows for several samples. Pass `qc/{s
 
 ## Re-running / resuming
 
+Each sample runs Nextflow in its own `OUTDIR` (cache, `.nextflow.log`, master log `<SAMPLEID>.master.<jobid>.log`), so several samples can run at once from one install; before 1.0.2 a second concurrent sample failed with `Unable to acquire lock on session`.
+
 Re-run the same command (same `OUTDIR`, so the same work dir). Nextflow's `-resume` flag is set by default — completed tasks are skipped. Note: `splitFastq` creates new temp files each run, so align jobs are not cached across submissions; only `mergepairs` benefits from resume.
 
 ## Bad node exclusion

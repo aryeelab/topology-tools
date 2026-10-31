@@ -39,7 +39,7 @@ MAPQ="${MAPQ:-30}"
 CHUNK_READS="${CHUNK_READS:-30000000}"
 
 # Conda env for this release (override with MICROC_ENV=/path/to/env)
-PIPELINE_VERSION=1.0.1
+PIPELINE_VERSION=1.0.2
 MICROC_ENV=${MICROC_ENV:-${HOME}/miniforge3/envs/microc-preprocess-${PIPELINE_VERSION}}
 # ============================================================
 
@@ -74,6 +74,12 @@ NEXTFLOW="${MICROC_ENV}/bin/nextflow"
 WORKDIR="${NXF_WORK:-${OUTDIR}/work}"
 mkdir -p "${OUTDIR}" "${TMPDIR_NF}" "${WORKDIR}"
 
+# Nextflow runs in OUTDIR, so make every path absolute (relative to where this script is called)
+abspath() { case "$1" in /*) echo "$1" ;; *) echo "${PWD}/$1" ;; esac; }
+OUTDIR=$(abspath "${OUTDIR}"); TMPDIR_NF=$(abspath "${TMPDIR_NF}"); WORKDIR=$(abspath "${WORKDIR}")
+BWA_INDEX=$(abspath "${BWA_INDEX}"); CHROM_SIZES=$(abspath "${CHROM_SIZES}"); FASTQ_GLOB=$(abspath "${FASTQ_GLOB}")
+if [ -n "${DATASET_DIR}" ]; then DATASET_DIR=$(abspath "${DATASET_DIR}"); fi
+
 GIT_COMMIT=$(cd "${REPO}" && git rev-parse HEAD 2>/dev/null || echo unknown)
 DS_OPTS=""
 if [ -n "${DATASET_DIR}" ]; then
@@ -91,15 +97,17 @@ EXCLUDE_NODES=$(sort -u "${FAILED_NODES_FILE}" | tr '\n' ',' | sed 's/,$//')
 EXCLUDE_OPT=""
 [ -n "${EXCLUDE_NODES}" ] && EXCLUDE_OPT="--exclude=${EXCLUDE_NODES}"
 
-sbatch --mem=4G ${EXCLUDE_OPT} --wrap="
+# Nextflow is launched from OUTDIR, so each sample has its own cache (.nextflow/), .nextflow.log and
+# master log there: samples can run concurrently and the checkout is never written to.
+sbatch --mem=4G ${EXCLUDE_OPT} -o "${OUTDIR}/${SAMPLEID}.master.%j.log" --wrap="
   export MICROC_ENV=${MICROC_ENV}
   export JAVA_HOME=${MICROC_ENV}
   export JAVA_CMD=${MICROC_ENV}/bin/java
-  cd ${REPO}
+  cd '${OUTDIR}'
   ${NEXTFLOW} run -resume \
     -w '${WORKDIR}' \
-    -c nf/nextflow.config \
-    nf/microc_preprocess.nf \
+    -c '${REPO}/nf/nextflow.config' \
+    '${REPO}/nf/microc_preprocess.nf' \
     --sample_id '${SAMPLEID}' \
     --bwa_index '${BWA_INDEX}' \
     --chrom_sizes '${CHROM_SIZES}' \

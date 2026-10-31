@@ -63,11 +63,12 @@ output values, so it is at least a minor release.
 
 ### Installing a released version
 ```bash
-V=1.0.1; SRC=<prefix>/topology-tools/microc-preprocess-$V; ENV=<envs>/microc-preprocess-$V
+V=1.0.2; SRC=<prefix>/topology-tools/microc-preprocess-$V; ENV=<envs>/microc-preprocess-$V
 git clone -q https://github.com/aryeelab/topology-tools.git "$SRC" && (cd "$SRC" && git checkout -q microc-preprocess/v$V)
 conda create -q -y -p "$ENV" --file "$SRC/envs/microc-preprocess-$V.linux-64.explicit.txt"
 "$ENV/bin/pairtools" --version && JAVA_HOME="$ENV" "$ENV/bin/nextflow" -version
 ```
-Run from that checkout (`bash $SRC/microc-nf-submit.sh`). Nextflow keeps its cache (`.nextflow/`, logs) in the
-checkout and its work dir in `OUTDIR/work`; pairs and BAM are copied out, so `work/` can be removed once a
+Run `bash $SRC/microc-nf-submit.sh` from anywhere. Nextflow runs in `OUTDIR` (its cache `.nextflow/`,
+`.nextflow.log` and the master job log `<SAMPLEID>.master.<jobid>.log` are there; the checkout is never written to)
+and its work dir is `OUTDIR/work`; pairs and BAM are copied out, so `work/` can be removed once a
 run's outputs are in place.
