@@ -6,7 +6,7 @@ description: Preprocess paired-end Micro-C or Region Capture Micro-C (RCMC) FAST
 # Micro-C preprocessing (FASTQ → pairs)
 
 The recipe of the `microc-preprocess` component of https://github.com/aryeelab/topology-tools
-(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.0.2). It is written so you can
+(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.0.3). It is written so you can
 run it with whatever workflow manager and scheduler you use.
 
 ## Software
@@ -15,6 +15,7 @@ run it with whatever workflow manager and scheduler you use.
 | bwa | 0.7.18 | alignment |
 | pairtools | 1.1.3 | parse, sort, merge, dedup, split |
 | samtools | 1.21 | BAM sort and index |
+| seqkit | 2.14.0 | splitting FASTQs into chunks (`seqkit split2`) |
 
 Exact environment of a release: `envs/microc-preprocess-<version>.linux-64.explicit.txt` in the repo
 (`conda create -p <env> --file <that file>`); build spec `envs/microc-preprocess.yml`. Install into a
@@ -50,10 +51,13 @@ samtools index $SID.bam
 Deduplicate only after merging every lane and chunk of a sample: duplicates span lanes.
 
 ## Parallelising
-Split each FASTQ pair into chunks of equal read count (the release default is 30,000,000 reads), run
+Split each FASTQ pair into chunks of equal read count (the release default is 30,000,000 reads;
+`seqkit split2 -1 R1 -2 R2 -s 30000000 -j 4 --compress-level 1 -O chunks`), run
 step 1 on each chunk in parallel, then step 2 once. bwa estimates the insert-size distribution per batch,
 so different chunk sizes change a few alignments per 10,000 pairs (~99.99% identical); keep the chunk size
-fixed within a project. Resources used by the reference implementation: step 1 6 CPUs / 10 GB per chunk;
+fixed within a project. Write chunks compressed: uncompressed chunks of a deep library are hundreds of GB
+of writes. Resources used by the reference implementation: splitting 4 CPUs (~100 s per 30M read pairs);
+step 1 6 CPUs / 10 GB per chunk;
 step 2 8 CPUs / 100 GB (k-way merge and dedup of a deep library). `$TMP` must have room for the merged
 pairs.
 

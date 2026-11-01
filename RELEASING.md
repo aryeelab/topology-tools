@@ -63,7 +63,7 @@ output values, so it is at least a minor release.
 
 ### Installing a released version
 ```bash
-V=1.0.2; SRC=<prefix>/topology-tools/microc-preprocess-$V; ENV=<envs>/microc-preprocess-$V
+V=1.0.3; SRC=<prefix>/topology-tools/microc-preprocess-$V; ENV=<envs>/microc-preprocess-$V
 git clone -q https://github.com/aryeelab/topology-tools.git "$SRC" && (cd "$SRC" && git checkout -q microc-preprocess/v$V)
 conda create -q -y -p "$ENV" --file "$SRC/envs/microc-preprocess-$V.linux-64.explicit.txt"
 "$ENV/bin/pairtools" --version && JAVA_HOME="$ENV" "$ENV/bin/nextflow" -version

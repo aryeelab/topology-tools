@@ -38,8 +38,32 @@ if (!file(params.fq_input)) error "No FASTQs match --fq_input ${params.fq_input}
 
 Channel
     .fromFilePairs(params.fq_input, flat:true, checkIfExists:true)
-    .splitFastq(by: params.chunk_reads, pe:true, file:true)
-    .set {fastq_splits}
+    .set {fastq_pairs}
+
+// Split each FASTQ pair into chunks of chunk_reads reads in its own Slurm job. (Up to 1.0.2 Nextflow's
+// splitFastq did this in the master JVM, and the page cache of the chunk writes filled the master's
+// memory limit.) Chunks are gzipped at level 1 to cut work-dir I/O; bwa reads them directly.
+process split_fastq {
+    input:
+    tuple val(id), path(fastq_r1), path(fastq_r2)
+    output:
+    tuple val(id), path("chunks/r1/*"), path("chunks/r2/*")
+
+    """
+    #!/bin/bash
+    set -eo pipefail
+    trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
+
+    seqkit split2 -1 ${fastq_r1} -2 ${fastq_r2} -s ${params.chunk_reads} -j ${task.cpus} \
+        --compress-level 1 -O chunks
+    # seqkit names chunks <fastq name without .fastq/.fq[.gz]>.part_NNN.<ext>
+    stem() { local b=\${1%.gz}; b=\${b%.fastq}; echo \${b%.fq}; }
+    mkdir chunks/r1 chunks/r2
+    mv chunks/\$(stem ${fastq_r1}).part_* chunks/r1/
+    mv chunks/\$(stem ${fastq_r2}).part_* chunks/r2/
+    """
+}
+
 process microc_align {
     // clusterOptions '-x node26,node20,node14'
     input:
@@ -138,7 +162,7 @@ process mergepairs {
     samtools sort -@4 -o ${sample_id}.bam
 
     samtools index ${sample_id}.bam
-    { pairtools --version; { bwa 2>&1 || true; } | grep Version; samtools --version | head -1; } > ${sample_id}.tool_versions.txt
+    { pairtools --version; { bwa 2>&1 || true; } | grep Version; samtools --version | head -1; seqkit version; } > ${sample_id}.tool_versions.txt
     """
 }
 
@@ -168,6 +192,14 @@ workflow {
     // fastq_r1
     // fastq_r2
     main:
+        split_fastq(fastq_pairs)
+        // One (id, chunk_r1, chunk_r2) tuple per chunk; sorting by name (part_NNN) keeps R1 and R2 in step.
+        fastq_splits = split_fastq.out.flatMap { id, r1s, r2s ->
+            r1s = [r1s].flatten().sort { it.name }
+            r2s = [r2s].flatten().sort { it.name }
+            if (r1s.size() != r2s.size()) error "split_fastq: ${r1s.size()} R1 but ${r2s.size()} R2 chunks for ${id}"
+            [r1s, r2s].transpose().collect { r1, r2 -> [id, r1, r2] }
+        }
         microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 6, "16GB", "500", params.mapq, 0, params.tmpdir)
         mergepairs(params.tmpdir, params.sample_id, microc_align.out.collect())
         printf("Completed")

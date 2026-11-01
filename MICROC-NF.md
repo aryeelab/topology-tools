@@ -50,7 +50,10 @@ There are no site defaults: the script stops if a required setting is empty. It 
 
 ## What it does
 
-1. Splits input FASTQs into 30M-read chunks (`splitFastq`)
+1. Splits each FASTQ pair into 30M-read chunks in its own Slurm job (`split_fastq`: `seqkit split2`, chunks
+   gzipped at level 1). Up to 1.0.2 Nextflow's `splitFastq` did this inside the 4 GB master job, which was
+   killed on full-size libraries: the page cache of the uncompressed chunk writes counts against the job's
+   memory limit. The master now only orchestrates.
 2. Aligns each chunk in parallel: `bwa mem -5SP -T0 | pairtools parse --min-mapq 30 --walks-policy 5unique --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len | pairtools sort`
 3. Merges all chunks: `pairtools merge | dedup --mark-dups | split`
 4. Copies pairs, BAM and dedup stats to `DATASET_DIR/{pairs,bam,qc}` (or `OUTDIR`), never overwriting
@@ -97,7 +100,7 @@ FOCI-3D counts + QC batch run; concatenate rows for several samples. Pass `qc/{s
 
 Each sample runs Nextflow in its own `OUTDIR` (cache, `.nextflow.log`, master log `<SAMPLEID>.master.<jobid>.log`), so several samples can run at once from one install; before 1.0.2 a second concurrent sample failed with `Unable to acquire lock on session`.
 
-Re-run the same command (same `OUTDIR`, so the same work dir). Nextflow's `-resume` flag is set by default — completed tasks are skipped. Note: `splitFastq` creates new temp files each run, so align jobs are not cached across submissions; only `mergepairs` benefits from resume.
+Re-run the same command (same `OUTDIR`, so the same work dir). Nextflow's `-resume` flag is set by default — completed tasks are skipped. From 1.0.3 the chunks are task outputs, so a resumed run reuses finished `split_fastq` and `microc_align` tasks.
 
 ## Bad node exclusion
 
@@ -115,10 +118,11 @@ To clear the blacklist, delete or empty the file.
 
 | Process | CPUs | Memory | Notes |
 |---------|------|--------|-------|
+| `split_fastq` | 4 | 16 GB | one per FASTQ pair; ~100 s per 30M read pairs |
 | `microc_align` | 6 | 10 GB | BWA dominates; parse nproc scaled to cores/2 |
 | `mergepairs` | 8 | 100 GB | pairtools dedup is I/O-bound; memory for k-way merge |
 
-Settings are in `nf/nextflow.config` under `withName:microc_align` and `withName:mergepairs`.
+Settings are in `nf/nextflow.config` under `withName:split_fastq`, `withName:microc_align` and `withName:mergepairs`. The master job (Nextflow itself) needs 4 GB.
 
 ## Troubleshooting
 

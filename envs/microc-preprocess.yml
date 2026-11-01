@@ -6,6 +6,9 @@
 # pairtools 1.1.3 replaces 0.3.0 from 1.0.0 on. On a 4M read-pair Caov-3 test at MAPQ 30 every
 # pair kept by both versions was identical and 0.06% were kept by only one (different duplicate
 # chosen). 1.x labels walk-rescued pairs UU where 0.3.0 used uu/Uu/uU.
+#
+# seqkit (from 1.0.3) splits FASTQs into chunks in a Slurm job (split_fastq) instead of Nextflow's
+# splitFastq in the master job.
 name: microc-preprocess
 channels:
   - conda-forge
@@ -15,5 +18,6 @@ dependencies:
   - pairtools=1.1.3
   - bwa=0.7.18
   - samtools=1.21
+  - seqkit=2.14.0
   - nextflow=24.10.6
   - openjdk=17

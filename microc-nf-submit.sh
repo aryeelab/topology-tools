@@ -39,7 +39,7 @@ MAPQ="${MAPQ:-30}"
 CHUNK_READS="${CHUNK_READS:-30000000}"
 
 # Conda env for this release (override with MICROC_ENV=/path/to/env)
-PIPELINE_VERSION=1.0.2
+PIPELINE_VERSION=1.0.3
 MICROC_ENV=${MICROC_ENV:-${HOME}/miniforge3/envs/microc-preprocess-${PIPELINE_VERSION}}
 # ============================================================
 
@@ -64,6 +64,10 @@ if [ ! -x "${MICROC_ENV}/bin/pairtools" ]; then
 fi
 if ! "${MICROC_ENV}/bin/pairtools" --version | grep -q ' 1\.1\.3$'; then
     echo "Error: ${MICROC_ENV} does not have pairtools 1.1.3 (microc-preprocess ${PIPELINE_VERSION} needs it)."
+    exit 1
+fi
+if [ ! -x "${MICROC_ENV}/bin/seqkit" ]; then
+    echo "Error: ${MICROC_ENV} has no seqkit (microc-preprocess ${PIPELINE_VERSION} splits FASTQs with it)."
     exit 1
 fi
 
