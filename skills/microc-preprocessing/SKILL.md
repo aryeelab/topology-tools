@@ -6,7 +6,7 @@ description: Preprocess paired-end Micro-C or Region Capture Micro-C (RCMC) FAST
 # Micro-C preprocessing (FASTQ → pairs)
 
 The recipe of the `microc-preprocess` component of https://github.com/aryeelab/topology-tools
-(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.1.1). It is written so you can
+(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.1.2). It is written so you can
 run it with whatever workflow manager and scheduler you use.
 
 ## Software
@@ -89,6 +89,8 @@ of writes. Resources used by the reference implementation: splitting 4 CPUs (~10
 step 1 6 CPUs / 28 GB per chunk (bwa-mem2 ~19 GB; ~1.1–1.8 h per 30M read pairs); steps 2–3 8 CPUs / 64 GB
 (eight blocks at once; 182M read pairs: 20 min, 14 GB peak). The work dir needs room for the chunk BAMs
 and the merged BAM (several times the final BAM).
+Record each step's queue wait, run time, CPU use and peak memory (the reference implementation writes a
+Nextflow trace per run, `<SID>.trace.<timestamp>.txt`): it is what sizes the next large run.
 
 ## Outputs
 | File | Content |

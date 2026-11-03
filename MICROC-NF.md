@@ -114,7 +114,13 @@ OUTDIR/
   {sample_id}.preprocess.provenance.json  # pipeline version + commit, params, input FASTQs, tool versions, run times
   {sample_id}.tool_versions.txt
   {sample_id}.foci_manifest.tsv           # one FOCI-3D batch manifest row (only with DATASET_DIR)
+  {sample_id}.trace.<YYYYMMDD-HHMMSS>.txt # Nextflow trace, one per launch (from 1.1.2)
 ```
+
+The trace has one row per task attempt: Slurm job id, submit/start/complete times, queue and run time,
+CPUs, `%cpu`, peak RSS and virtual memory, and I/O (`rchar`/`wchar`, `read_bytes`/`write_bytes`),
+with durations in ms and sizes in bytes (`raw`). Keep it when you delete `work/`: it is the record of
+how long each step took and what it used, for sizing later runs.
 
 Outputs are copied, not symlinked: earlier versions used Nextflow's default `symlink` publish mode, so files in
 `OUTDIR` were links into the Nextflow work directory on scratch. Check old runs with `ls -l` before deleting
@@ -126,7 +132,7 @@ FOCI-3D counts + QC batch run; concatenate rows for several samples. Pass `qc/{s
 
 ## Re-running / resuming
 
-Each sample runs Nextflow in its own `OUTDIR` (cache, `.nextflow.log`, master log `<SAMPLEID>.master.<jobid>.log`), so several samples can run at once from one install; before 1.0.2 a second concurrent sample failed with `Unable to acquire lock on session`.
+Each sample runs Nextflow in its own `OUTDIR` (cache, `.nextflow.log`, master log `<SAMPLEID>.master.<jobid>.log`, trace), so several samples can run at once from one install; before 1.0.2 a second concurrent sample failed with `Unable to acquire lock on session`.
 
 Re-run the same command (same `OUTDIR`, so the same work dir). Nextflow's `-resume` flag is set by default — completed tasks are skipped. From 1.0.3 the chunks are task outputs, so a resumed run reuses finished `split_fastq` and `microc_align` tasks.
 
