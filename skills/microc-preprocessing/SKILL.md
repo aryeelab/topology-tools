@@ -19,7 +19,8 @@ run it with whatever workflow manager and scheduler you use.
 | seqkit | 2.14.0 | splitting FASTQs into chunks (`seqkit split2`) |
 
 Exact environment of a release: `envs/microc-preprocess-<version>.linux-64.explicit.txt` in the repo
-(`conda create -p <env> --file <that file>`); build spec `envs/microc-preprocess.yml`. Install into a
+(`conda create -p <env> --file <that file>`; behind a conda mirror, first rewrite its
+`https://conda.anaconda.org/` URLs to the mirror's); build spec `envs/microc-preprocess.yml`. Install into a
 directory you control, one env per version. Record `pairtools --version`, `bwa-mem2 version` (or bwa's `Version:` line) and
 `samtools --version | head -1` with every output.
 

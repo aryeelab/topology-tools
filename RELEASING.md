@@ -21,6 +21,8 @@ deleted; a fix is the next patch release.
    - add the exact environment the release was tested in:
      `envs/microc-qc-<version>.linux-64.explicit.txt` (`conda list -p <env> --explicit`) and
      `envs/microc-qc-<version>.linux-64.pip.txt` (`pip freeze` without `@ file://` lines).
+     Its package URLs must start with `https://conda.anaconda.org/`: a conda that installs through a mirror
+     (`channel_alias`) writes the mirror's URLs, so replace that prefix before committing.
 4. Tag and push:
    ```bash
    git tag -a microc-qc/v<version> -m "microc-qc <version>: <one-line summary>"
@@ -52,6 +54,8 @@ output values, so it is at least a minor release.
    - add the exact environment the release was tested in:
      `envs/microc-preprocess-<version>.linux-64.explicit.txt` (`conda list -p <env> --explicit`);
      if a tool version changed, update the version check in `microc-nf-submit.sh`.
+     Its package URLs must start with `https://conda.anaconda.org/`: a conda that installs through a mirror
+     (`channel_alias`) writes the mirror's URLs, so replace that prefix before committing.
    - update `skills/microc-preprocessing/SKILL.md` (release number, and any change to versions, steps or options).
 3. Tag and push:
    ```bash
