@@ -35,11 +35,18 @@ ASSAY="${ASSAY:-microc}"                 # microc | rcmc (manifest column)
 # pairtools parse --min-mapq
 MAPQ="${MAPQ:-30}"
 
+# Aligner: bwa-mem2 (default; same alignments as bwa, ~2x faster; needs the bwa-mem2 index files
+# <BWA_INDEX>.0123 and .bwt.2bit.64: bwa-mem2 index <fasta>) or bwa (as up to 1.0.3)
+ALIGNER="${ALIGNER:-bwa-mem2}"
+# pairtools dedup backend: scipy (default; same pairs and stats as up to 1.0.3) or cython (not transitive;
+# slower on the light pairs that dedup reads from 1.1.0)
+DEDUP_BACKEND="${DEDUP_BACKEND:-scipy}"
+
 # Reads per FASTQ chunk for parallel alignment
 CHUNK_READS="${CHUNK_READS:-30000000}"
 
 # Conda env for this release (override with MICROC_ENV=/path/to/env)
-PIPELINE_VERSION=1.0.3
+PIPELINE_VERSION=1.1.0
 MICROC_ENV=${MICROC_ENV:-${HOME}/miniforge3/envs/microc-preprocess-${PIPELINE_VERSION}}
 # ============================================================
 
@@ -70,6 +77,22 @@ if [ ! -x "${MICROC_ENV}/bin/seqkit" ]; then
     echo "Error: ${MICROC_ENV} has no seqkit (microc-preprocess ${PIPELINE_VERSION} splits FASTQs with it)."
     exit 1
 fi
+
+case "${ALIGNER}" in
+    bwa-mem2)
+        if [ ! -x "${MICROC_ENV}/bin/bwa-mem2" ]; then echo "Error: ${MICROC_ENV} has no bwa-mem2."; exit 1; fi
+        case "${BWA_INDEX}" in *.tar.gz|*.tgz) ;; *)
+            for e in 0123 bwt.2bit.64; do
+                if [ ! -s "${BWA_INDEX}.${e}" ]; then
+                    echo "Error: ${BWA_INDEX}.${e} not found. Build the bwa-mem2 index (bwa-mem2 index ${BWA_INDEX}) or set ALIGNER=bwa."
+                    exit 1
+                fi
+            done ;;
+        esac ;;
+    bwa) ;;
+    *) echo "Error: ALIGNER must be bwa-mem2 or bwa (got '${ALIGNER}')."; exit 1;;
+esac
+case "${DEDUP_BACKEND}" in cython|scipy) ;; *) echo "Error: DEDUP_BACKEND must be cython or scipy (got '${DEDUP_BACKEND}')."; exit 1;; esac
 
 export JAVA_HOME="${MICROC_ENV}"
 export JAVA_CMD="${MICROC_ENV}/bin/java"
@@ -120,6 +143,8 @@ sbatch --mem=4G ${EXCLUDE_OPT} -o "${OUTDIR}/${SAMPLEID}.master.%j.log" --wrap="
     --tmpdir '${TMPDIR_NF}' \
     --failed_nodes_file '${FAILED_NODES_FILE}' \
     --mapq ${MAPQ} \
+    --aligner ${ALIGNER} \
+    --dedup_backend ${DEDUP_BACKEND} \
     --chunk_reads ${CHUNK_READS} \
     --git_commit '${GIT_COMMIT}' \
     ${DS_OPTS}

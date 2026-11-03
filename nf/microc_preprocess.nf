@@ -86,7 +86,9 @@ process microc_align {
     // path resource_monitor_script, name:
     // path top_monitor_script, name:
     output:
-    path "${fastq_r1}.pairsam.gz"
+    path "${fastq_r1}.blk_*.pairs.gz", emit: pairs
+    path "${fastq_r1}.blocks.tsv", emit: blocks
+    path "${fastq_r1}.bam", emit: bam
 
     """
     #!/bin/bash
@@ -122,11 +124,24 @@ process microc_align {
     fi
     echo "Using BWA index: \$GENOME_INDEX_FA"
     PARSE_NPROC=\$(( ${bwa_cores} / 2 ))
-    bwa mem -5SP -T0 -t${bwa_cores} \$GENOME_INDEX_FA ${fastq_r1} ${fastq_r2} | \
+    # bwa-mem2 (default from 1.1.0) gives the same alignments as bwa mem ~2x faster; it needs the
+    # bwa-mem2 index files (.0123, .bwt.2bit.64) next to the FASTA. params.aligner = 'bwa' reproduces <= 1.0.3.
+    ${params.aligner} mem -5SP -T0 -t${bwa_cores} \$GENOME_INDEX_FA ${fastq_r1} ${fastq_r2} | \
     pairtools parse --min-mapq ${mapq} --walks-policy 5unique \
     --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len \
     --nproc-in \${PARSE_NPROC} --nproc-out \${PARSE_NPROC} --chroms-path ${chrom_sizes} | \
-    pairtools sort --nproc ${bwa_cores} -o ${fastq_r1}.pairsam.gz
+    pairtools split --output-pairs unsorted.pairs.lz4 --output-sam - | \
+    samtools view -u -e '[Yt]=="UU" || [Yt]=="UR" || [Yt]=="RU"' - | \
+    samtools sort -@2 -m 1G -T srt -o ${fastq_r1}.bam
+    # From 1.1.0 the pairs and the alignments travel separately: light pairs (no SAM columns) to the
+    # merge job's dedup, and a coordinate-sorted BAM of the chunk's alignments, kept only for pair types
+    # that dedup can output (UU, UR, RU), to be merged and filtered to the deduplicated read IDs.
+    # The sorted pairs are written as one file per chrom1 (bin/split_pairs_by_chrom1.py), so that the
+    # merge job can merge and deduplicate the chromosomes in parallel. (lz4 and bgzip, not .gz paths:
+    # for those pairtools uses pbgzip, whose threads spin on locks.)
+    pairtools sort --nproc ${bwa_cores} --memory 2G --tmpdir . unsorted.pairs.lz4 | \
+    split_pairs_by_chrom1.py ${fastq_r1} 2
+    rm unsorted.pairs.lz4
     """
 }
 process mergepairs {
@@ -140,7 +155,9 @@ process mergepairs {
     input:
     path tmpdir
     val sample_id
-    path pairsams
+    path chunk_pairs
+    path chunk_blocks
+    path chunk_bams
     output:
     path "${sample_id}.mapped.pairs"
     // path microc_stats
@@ -154,15 +171,29 @@ process mergepairs {
     trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
 
     export TMPDIR=${tmpdir}
-    echo ${pairsams}
-    pairtools merge --tmpdir ${tmpdir} -o merge.pairs.gz --nproc 4 ${pairsams}
-    pairtools dedup merge.pairs.gz --nproc-in 4 --nproc-out 4 --mark-dups --output-stats ${sample_id}.stats.txt | \
-    pairtools split --nproc-in 4 --nproc-out 4 --output-pairs ${sample_id}.mapped.pairs --output-sam -| \
-    samtools view -bS -@4 | \
-    samtools sort -@4 -o ${sample_id}.bam
-
-    samtools index ${sample_id}.bam
-    { pairtools --version; { bwa 2>&1 || true; } | grep Version; samtools --version | head -1; seqkit version; } > ${sample_id}.tool_versions.txt
+    # BAM: merge the chunk BAMs while the pairs are merged and deduplicated (dedup uses ~1.5 cores).
+    samtools merge -@4 -c -p -l 1 -o all.bam ${chunk_bams} &
+    BAM_MERGE=\$!
+    # Pairs: duplicates can only share chrom1, so each chrom1 block (one file per chunk) is merged and
+    # deduplicated on its own, ${task.cpus} at a time, and the outputs are concatenated in pairtools sort order
+    # (chrom1 in C collation). Pairs without SAM columns: dedup is ~4x faster than on pairsam.
+    # scipy (default) is transitive; its chunked clustering can see a cluster split at a different place than
+    # in one whole-sample run, so a few pairs per 10 million can differ from <= 1.0.3 (UT test: 34 of 57.6M).
+    LC_ALL=C sort -t \$'\t' -k2,2 -u ${chunk_blocks} > blocks.tsv
+    mkdir blk
+    cut -f1 blocks.tsv | xargs -P ${task.cpus} -I{} bash -c 'set -eo pipefail
+        pairtools merge --tmpdir ${tmpdir} --nproc 1 *.blk_{}.pairs.gz | \
+        pairtools dedup --backend ${params.dedup_backend} --mark-dups --output-stats blk/{}.stats -o blk/{}.pairs'
+    grep '^#' blk/\$(head -1 blocks.tsv | cut -f1).pairs > ${sample_id}.mapped.pairs
+    cut -f1 blocks.tsv | while read b; do grep -v '^#' blk/\$b.pairs || [ \$? = 1 ]; done >> ${sample_id}.mapped.pairs
+    pairtools stats --merge blk/*.stats -o ${sample_id}.stats.txt
+    wait \$BAM_MERGE
+    # Keep the alignments of the deduplicated pairs only: the same records as the <= 1.0.3 BAM.
+    grep -v '^#' ${sample_id}.mapped.pairs | cut -f1 > nodup_ids.txt
+    samtools view -@8 -N nodup_ids.txt -b -o ${sample_id}.bam all.bam
+    rm -r all.bam nodup_ids.txt blk
+    samtools index -@8 ${sample_id}.bam
+    { pairtools --version; { bwa 2>&1 || true; } | grep Version; echo "bwa-mem2 \$(bwa-mem2 version 2>/dev/null | tail -1)"; samtools --version | head -1; seqkit version; } > ${sample_id}.tool_versions.txt
     """
 }
 
@@ -201,7 +232,7 @@ workflow {
             [r1s, r2s].transpose().collect { r1, r2 -> [id, r1, r2] }
         }
         microc_align(fastq_splits,params.bwa_index, params.bwa_prefix, params.chrom_sizes, 6, "16GB", "500", params.mapq, 0, params.tmpdir)
-        mergepairs(params.tmpdir, params.sample_id, microc_align.out.collect())
+        mergepairs(params.tmpdir, params.sample_id, microc_align.out.pairs.collect(), microc_align.out.blocks.collect(), microc_align.out.bam.collect())
         printf("Completed")
 }
 
@@ -226,7 +257,7 @@ workflow.onComplete {
         nextflow_version: workflow.nextflow.version.toString(),
         session_id: workflow.sessionId.toString(),
         command_line: workflow.commandLine,
-        params: [mapq: params.mapq, walks_policy: '5unique', max_inter_align_gap: 30,
+        params: [aligner: params.aligner, dedup_backend: params.dedup_backend, dedup_by: 'chrom1', mapq: params.mapq, walks_policy: '5unique', max_inter_align_gap: 30,
                  add_columns: 'pos5,pos3,dist_to_5,dist_to_3,read_len', chunk_reads: params.chunk_reads,
                  bwa_index: params.bwa_index.toString(), chrom_sizes: params.chrom_sizes.toString()],
         inputs: fastqs,

@@ -9,6 +9,7 @@ Processes paired-end Micro-C FASTQ files through alignment, deduplication, and o
 | `microc-nf-submit.sh` | Submit script — the only file a user edits |
 | `nf/microc_preprocess.nf` | Pipeline definition (DSL1) |
 | `nf/nextflow.config` | Resource settings and Slurm configuration |
+| `nf/bin/split_pairs_by_chrom1.py` | Writes a chunk's sorted pairs as one file per chrom1 (on the tasks' `PATH`) |
 | `envs/microc-preprocess.yml` | Build spec for the pipeline's conda env |
 | `envs/microc-preprocess-<version>.linux-64.explicit.txt` | Exact env each release was tested in (install from this) |
 | `microc-env.yml` | Legacy env (pairtools 0.3.0); only for reproducing pairs made before 1.0.0 |
@@ -18,7 +19,12 @@ Processes paired-end Micro-C FASTQ files through alignment, deduplication, and o
 Install a released version (tag `microc-preprocess/v<version>`) and its env; see `RELEASING.md`,
 "Installing a released version". The env goes to `~/miniforge3/envs/microc-preprocess-<version>`,
 where the submit script looks for it (override with `MICROC_ENV=/path/to/env`). It holds Nextflow
-24.10.6, OpenJDK 17, BWA 0.7.18, pairtools 1.1.3 and samtools. No other software is needed.
+24.10.6, OpenJDK 17, bwa-mem2 2.2.1, BWA 0.7.18, pairtools 1.1.3, samtools and seqkit. No other software is needed.
+
+From 1.1.0 the default aligner is bwa-mem2, which needs its own index files next to the FASTA:
+`bwa-mem2 index genome.fa` adds `genome.fa.0123` and `genome.fa.bwt.2bit.64` (human: ~1 h, ~72 GB RAM).
+Its `.amb/.ann/.pac` are the same as bwa's, so one prefix can serve both aligners. A `.tar.gz` index must
+contain them too. `ALIGNER=bwa` runs bwa 0.7.18 with a bwa index, as up to 1.0.3.
 
 Build envs as a batch job: on network storage one can take tens of minutes.
 
@@ -37,6 +43,8 @@ Build envs as a batch job: on network storage one can take tens of minutes.
    ASSAY=microc                                # microc | rcmc
    MAPQ=30                                     # pairtools parse --min-mapq
    CHUNK_READS=30000000                        # reads per FASTQ chunk
+   ALIGNER=bwa-mem2                            # bwa-mem2 | bwa
+   DEDUP_BACKEND=scipy                         # pairtools dedup --backend: scipy | cython
    ```
 
 2. Submit:
@@ -54,8 +62,13 @@ There are no site defaults: the script stops if a required setting is empty. It 
    gzipped at level 1). Up to 1.0.2 Nextflow's `splitFastq` did this inside the 4 GB master job, which was
    killed on full-size libraries: the page cache of the uncompressed chunk writes counts against the job's
    memory limit. The master now only orchestrates.
-2. Aligns each chunk in parallel: `bwa mem -5SP -T0 | pairtools parse --min-mapq 30 --walks-policy 5unique --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len | pairtools sort`
-3. Merges all chunks: `pairtools merge | dedup --mark-dups | split`
+2. Aligns each chunk in parallel: `bwa-mem2 mem -5SP -T0 | pairtools parse --min-mapq 30 --walks-policy 5unique --max-inter-align-gap 30 --add-columns pos5,pos3,dist_to_5,dist_to_3,read_len | pairtools split`.
+   The pairs (without SAM columns) are sorted and written as one file per chrom1 (`nf/bin/split_pairs_by_chrom1.py`);
+   the alignments of UU/UR/RU pairs go to a coordinate-sorted chunk BAM.
+3. Merge job: each chrom1 is merged across chunks and deduplicated on its own (`pairtools merge | pairtools dedup
+   --mark-dups`, 8 at a time); the results are concatenated in sort order and the stats combined
+   (`pairtools stats --merge`). Meanwhile the chunk BAMs are merged; the BAM is then filtered to the read IDs of the
+   deduplicated pairs (`samtools view -N`) and indexed.
 4. Copies pairs, BAM and dedup stats to `DATASET_DIR/{pairs,bam,qc}` (or `OUTDIR`), never overwriting
    existing files, and writes provenance to `OUTDIR`
 
@@ -72,6 +85,20 @@ From 1.0.0 the pipeline uses pairtools 1.1.3 instead of 0.3.0. On 4M read pairs 
 (one shared bwa alignment), every pair kept by both versions was identical, 0.06% were kept by only one
 (a different duplicate chosen), and microc-qc's ≤80 bp fraction was 13.10% vs 13.11%. pairtools 1.x
 labels walk-rescued pairs `UU` where 0.3.0 used `uu`/`Uu`/`uU`; filter on `pair_type` with that in mind.
+
+### Changes in 1.1.0 (speed)
+On a 182M read-pair RCMC library a sample took 2 h 36 min instead of 6 h 49 min with 1.0.3; the merge job
+took 20 min instead of 2 h 14 min.
+- **bwa-mem2** replaces bwa: identical pairs and stats on the full library, align jobs ~2x faster.
+- **Dedup on pairs without SAM columns**: in 1.0.3 dedup parsed every pair's SAM records (~4x slower); the
+  BAM is now built from per-chunk sorted alignments, filtered to the kept read IDs: the same records as 1.0.3.
+- **Dedup per chrom1 in parallel** (duplicates always share chrom1). scipy's dedup clusters pairs in chunks of
+  10,000, and splitting by chromosome moves those chunk boundaries: on the test library 1,078 of 57.6M kept pairs
+  (0.002%) differ from 1.0.3 (another duplicate kept, or a pair counted as duplicate), 1,064 of them in the deeply
+  covered capture regions; 34 fewer pairs in total. Everything else is identical.
+- The default dedup backend is scipy again (cython is not transitive and slower on these pairs).
+- Inputs given to pairtools as `.gz` paths are decompressed with pbgzip when it is installed; its threads spin on
+  locks (system time > CPU time) without being faster, so the pipeline pipes data to pairtools or uses lz4.
 
 Align jobs (6 CPUs each) run in parallel up to your cluster's limits; a 400-CPU QOS allows ~66.
 
@@ -119,14 +146,16 @@ To clear the blacklist, delete or empty the file.
 | Process | CPUs | Memory | Notes |
 |---------|------|--------|-------|
 | `split_fastq` | 4 | 16 GB | one per FASTQ pair; ~100 s per 30M read pairs |
-| `microc_align` | 6 | 10 GB | BWA dominates; parse nproc scaled to cores/2 |
-| `mergepairs` | 8 | 100 GB | pairtools dedup is I/O-bound; memory for k-way merge |
+| `microc_align` | 6 | 28 GB | bwa-mem2 dominates (~19 GB for a human index; bwa ~7 GB); ~1.1–1.8 h per 30M read pairs, by node |
+| `mergepairs` | 8 | 64 GB | 8 chromosome dedups at once; the read-ID list for `samtools view -N` needs ~3 GB per 60M kept pairs (182M read-pair library: 14 GB peak, 20 min) |
 
 Settings are in `nf/nextflow.config` under `withName:split_fastq`, `withName:microc_align` and `withName:mergepairs`. The master job (Nextflow itself) needs 4 GB.
 
 ## Troubleshooting
 
 **"conda env … not found"** — install the release env (Setup above) or set `MICROC_ENV`.
+
+**`…0123 not found`** — build the bwa-mem2 index (`bwa-mem2 index <fasta>`, Setup above) or set `ALIGNER=bwa`.
 
 **All jobs land on a bad node** — pre-seed the exclusion file before submitting (see Bad node exclusion above).
 
