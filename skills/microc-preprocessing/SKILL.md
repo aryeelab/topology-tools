@@ -6,7 +6,7 @@ description: Preprocess paired-end Micro-C or Region Capture Micro-C (RCMC) FAST
 # Micro-C preprocessing (FASTQ → pairs)
 
 The recipe of the `microc-preprocess` component of https://github.com/aryeelab/topology-tools
-(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.1.0). It is written so you can
+(releases are tags `microc-preprocess/vX.Y.Z`; this skill describes 1.1.1). It is written so you can
 run it with whatever workflow manager and scheduler you use.
 
 ## Software
@@ -70,11 +70,14 @@ pairtools stats --merge blk/*.stats -o $SID.stats.txt
 ```bash
 samtools merge -@4 -c -p -l 1 -o all.bam chunk*.bam
 grep -v '^#' $SID.mapped.pairs | cut -f1 > nodup_ids.txt
-samtools view -@8 -N nodup_ids.txt -b -o $SID.bam all.bam
+grep -hv '^#' blk/*.dups | cut -f1 > dup_ids.txt       # step 2 with --output-dups blk/$b.dups
+samtools view -@8 -N nodup_ids.txt -b -o $SID.bam all.bam    # or -N ^dup_ids.txt if that list is shorter
 samtools index $SID.bam
 ```
 The result holds the alignments of the kept pairs, as in earlier releases (same records; reads at the same
-position may be in a different order). The read-ID list needs ~3 GB of memory per 60M kept pairs.
+position may be in a different order). all.bam has only UU/UR/RU pairs, each kept or a duplicate, so keeping
+the kept IDs and dropping the duplicates' IDs give the same BAM. samtools holds the list in memory (~50–75
+bytes per read name): use the shorter one (a deep library with 900M kept pairs: ~65 GB vs ~9 GB for its duplicates).
 
 ## Parallelising
 Split each FASTQ pair into chunks of equal read count (the release default is 30,000,000 reads;

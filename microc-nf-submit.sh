@@ -46,7 +46,7 @@ DEDUP_BACKEND="${DEDUP_BACKEND:-scipy}"
 CHUNK_READS="${CHUNK_READS:-30000000}"
 
 # Conda env for this release (override with MICROC_ENV=/path/to/env)
-PIPELINE_VERSION=1.1.0
+PIPELINE_VERSION=1.1.1
 MICROC_ENV=${MICROC_ENV:-${HOME}/miniforge3/envs/microc-preprocess-${PIPELINE_VERSION}}
 # ============================================================
 

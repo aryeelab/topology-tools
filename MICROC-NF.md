@@ -68,7 +68,8 @@ There are no site defaults: the script stops if a required setting is empty. It 
 3. Merge job: each chrom1 is merged across chunks and deduplicated on its own (`pairtools merge | pairtools dedup
    --mark-dups`, 8 at a time); the results are concatenated in sort order and the stats combined
    (`pairtools stats --merge`). Meanwhile the chunk BAMs are merged; the BAM is then filtered to the read IDs of the
-   deduplicated pairs (`samtools view -N`) and indexed.
+   deduplicated pairs (`samtools view -N`: keep the kept read IDs or drop the duplicates', whichever list is
+   shorter; from 1.1.1) and indexed.
 4. Copies pairs, BAM and dedup stats to `DATASET_DIR/{pairs,bam,qc}` (or `OUTDIR`), never overwriting
    existing files, and writes provenance to `OUTDIR`
 
@@ -147,7 +148,7 @@ To clear the blacklist, delete or empty the file.
 |---------|------|--------|-------|
 | `split_fastq` | 4 | 16 GB | one per FASTQ pair; ~100 s per 30M read pairs |
 | `microc_align` | 6 | 28 GB | bwa-mem2 dominates (~19 GB for a human index; bwa ~7 GB); ~1.1–1.8 h per 30M read pairs, by node |
-| `mergepairs` | 8 | 64 GB | 8 chromosome dedups at once; the read-ID list for `samtools view -N` needs ~3 GB per 60M kept pairs (182M read-pair library: 14 GB peak, 20 min) |
+| `mergepairs` | 8 | 64 GB | 8 chromosome dedups at once; `samtools view -N` holds the shorter of the kept / duplicate read-ID lists (~50–75 B per read name; at most half the mapped pairs). 182M read-pair library: 14 GB peak, 20 min |
 
 Settings are in `nf/nextflow.config` under `withName:split_fastq`, `withName:microc_align` and `withName:mergepairs`. The master job (Nextflow itself) needs 4 GB.
 

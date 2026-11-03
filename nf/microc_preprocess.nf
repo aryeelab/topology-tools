@@ -183,15 +183,19 @@ process mergepairs {
     mkdir blk
     cut -f1 blocks.tsv | xargs -P ${task.cpus} -I{} bash -c 'set -eo pipefail
         pairtools merge --tmpdir ${tmpdir} --nproc 1 *.blk_{}.pairs.gz | \
-        pairtools dedup --backend ${params.dedup_backend} --mark-dups --output-stats blk/{}.stats -o blk/{}.pairs'
+        pairtools dedup --backend ${params.dedup_backend} --mark-dups --output-stats blk/{}.stats -o blk/{}.pairs --output-dups blk/{}.dups'
     grep '^#' blk/\$(head -1 blocks.tsv | cut -f1).pairs > ${sample_id}.mapped.pairs
     cut -f1 blocks.tsv | while read b; do grep -v '^#' blk/\$b.pairs || [ \$? = 1 ]; done >> ${sample_id}.mapped.pairs
     pairtools stats --merge blk/*.stats -o ${sample_id}.stats.txt
     wait \$BAM_MERGE
-    # Keep the alignments of the deduplicated pairs only: the same records as the <= 1.0.3 BAM.
+    # Keep the alignments of the deduplicated pairs only: the same records as the <= 1.0.3 BAM. all.bam holds
+    # UU/UR/RU pairs, each either kept or a duplicate, so keep the kept read IDs or drop the duplicates' IDs,
+    # whichever list is shorter: samtools holds it in memory (~75 bytes per Illumina read name).
     grep -v '^#' ${sample_id}.mapped.pairs | cut -f1 > nodup_ids.txt
-    samtools view -@8 -N nodup_ids.txt -b -o ${sample_id}.bam all.bam
-    rm -r all.bam nodup_ids.txt blk
+    { grep -hv '^#' blk/*.dups || [ \$? = 1 ]; } | cut -f1 > dup_ids.txt
+    if [ \$(wc -l < dup_ids.txt) -lt \$(wc -l < nodup_ids.txt) ]; then IDS=^dup_ids.txt; else IDS=nodup_ids.txt; fi
+    samtools view -@8 -N \$IDS -b -o ${sample_id}.bam all.bam
+    rm -r all.bam nodup_ids.txt dup_ids.txt blk
     samtools index -@8 ${sample_id}.bam
     { pairtools --version; { bwa 2>&1 || true; } | grep Version; echo "bwa-mem2 \$(bwa-mem2 version 2>/dev/null | tail -1)"; samtools --version | head -1; seqkit version; } > ${sample_id}.tool_versions.txt
     """
