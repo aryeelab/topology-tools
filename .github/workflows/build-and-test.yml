@@ -129,7 +129,8 @@ jobs:
       run: |
         # Unit tests run separately: their tmp_path fixtures make pytest wipe --basetemp,
         # which would delete the workflow outputs before pytest-workflow checks them
-        pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow --ignore tests/test_microc_qc.py
+        # tests/preprocess-hic (Nextflow pipeline) runs in preprocess-hic-version-check and in its own env
+        pytest --keep-workflow-wd --basetemp /tmp/pytest_workflow --ignore tests/test_microc_qc.py --ignore tests/preprocess-hic
         pytest tests/test_microc_qc.py
 
     - name: Run pipeline to get full cromwell logs if pytest fails
