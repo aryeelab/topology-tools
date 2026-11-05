@@ -1,7 +1,7 @@
 # preprocess-hic: Hi-C Nextflow pipeline
 
 Processes paired-end restriction-enzyme Hi-C FASTQs (e.g. Arima Hi-C+, DpnII + HinfI) on a Slurm cluster
-into a lossless BAM, MAPQ ≥ 1 contact pairs, deduplication and restriction-fragment QC, and a balanced
+into a lossless BAM, contact pairs (MAPQ ≥ 1, or ≥ 0 to keep multi-mapping reads), deduplication and restriction-fragment QC, and a balanced
 `.mcool`. It follows the 4DN / Open2C recipe (`bwa mem -SP5M` + pairtools, as in 4DN's docker-4dn-hic and
 Open2C's distiller) and reuses the job layout of `microc-preprocess` (`MICROC-NF.md`).
 
@@ -45,6 +45,7 @@ bash preprocess-hic-submit.sh
 | `DATASET_DIR` | empty | copy outputs to `<DS>/bam`, `<DS>/pairs` (pairs and mcool) and `<DS>/qc` instead of `OUTDIR` (1.0.0 put the mcool in `<DS>/cool`) |
 | `FRAG_BED` | empty | precomputed restriction fragments (BED); otherwise digest `GENOME_FASTA` (default: the `BWA_INDEX` FASTA) with `ENZYMES` |
 | `ENZYMES` | `DpnII,HinfI` | Arima Hi-C+; see `digest_genome.py` for the others |
+| `MIN_MAPQ` | `1` | `pairtools parse --min-mapq`: 1 drops pairs with a MAPQ 0 side from the pairs (they stay in the BAM); 0 keeps them, with `mapq` 0 on that side (from 1.1.0) |
 | `MCOOL_MIN_MAPQ` | `30` | MAPQ (both sides) of the pairs binned into the `.mcool` |
 | `MCOOL_RESOLUTIONS` | 1 kb … 10 Mb (4DN's list) | first = base resolution |
 | `ASSEMBLY` | empty | `cooler --assembly` label |
@@ -55,11 +56,13 @@ bash preprocess-hic-submit.sh
 
 1. **Split** each FASTQ pair into chunks (`seqkit split2`).
 2. **Align and parse** each chunk (one Slurm job each):
-   `bwa-mem2 mem -SP5M | pairtools parse --min-mapq 1 --walks-policy 5unique --add-columns mapq,pos5,pos3,dist_to_5,dist_to_3,read_len | pairtools split`.
+   `bwa-mem2 mem -SP5M | pairtools parse --min-mapq $MIN_MAPQ --walks-policy 5unique --add-columns mapq,pos5,pos3,dist_to_5,dist_to_3,read_len | pairtools split`.
    - `-SP5M`: no mate rescue or pairing, 5'-most alignment primary, split hits flagged secondary (as 4DN);
      bwa's default score threshold (`-T 30`). pairtools 1.1.3 uses every SAM record of a read (secondary and
      supplementary alike), so `-M` changes only the flags in the BAM, not the pairs.
-   - `--min-mapq 1` (pairtools' default, as 4DN): a side with MAPQ 0 is `M` (multi-mapped). The `mapq1/mapq2`
+   - `--min-mapq 1` (default; pairtools' default, as 4DN): a side with MAPQ 0 is `M` (multi-mapped) and its pair is not
+     in the pairs file. `--min-mapq 0` (`MIN_MAPQ=0`): such a side is `U` at bwa's primary alignment, which bwa picks at
+     random among equally good locations, with `mapq` 0; use it to keep reads from repeats. Either way the `mapq1/mapq2`
      columns let you filter further (e.g. `pairtools select '(mapq1>=30) and (mapq2>=30)'`).
    - `--walks-policy 5unique`: for a ligation walk, the 5'-most unique pair (as microc-preprocess).
      `--max-inter-align-gap` is pairtools' default (20).
@@ -78,7 +81,7 @@ bash preprocess-hic-submit.sh
      adjacent other, valid cis, trans.
 4. **mcool**: `pairtools select` (MAPQ ≥ `MCOOL_MIN_MAPQ` on both sides) `| cooler cload pairs` at the base resolution,
    `cooler zoomify --balance` (ICE, cooler defaults) at every resolution. The cooler metadata records the pipeline,
-   version, sample and MAPQ filter.
+   version, sample, its MAPQ filter (`min_mapq`) and the pairs' parse MAPQ (`pairs_min_mapq`).
 
 The digest (`digest_genome.py`): fragments from cut to cut (DpnII `^GATC`, HinfI `G^ANTC`, union of sites), in
 chrom-sizes order. Mouse GRCm38 with DpnII+HinfI: 14.6M fragments (median 122 bp), 1.6 min, 1.3 GB. Digest once and pass
@@ -89,7 +92,7 @@ chrom-sizes order. Mouse GRCm38 with DpnII+HinfI: 14.6M fragments (median 122 bp
 ```
 DATASET_DIR/                            (or OUTDIR)
   bam/{sid}.bam{,.bai}                  # lossless: every alignment of every read pair, coordinate-sorted, Yt tags
-  pairs/{sid}.pairs.gz{,.px2}           # deduplicated UU/UR/RU pairs, MAPQ >= 1, with mapq, pos5/pos3, dist_to_5/3,
+  pairs/{sid}.pairs.gz{,.px2}           # deduplicated UU/UR/RU pairs, MAPQ >= MIN_MAPQ, with mapq, pos5/pos3, dist_to_5/3,
                                         #   read_len and rfrag columns; pairix index
   qc/{sid}.dedup.stats.txt              # pairtools dedup stats (pre-dedup totals)
   qc/{sid}.restrict_stats.tsv           # restriction-fragment categories of the deduplicated pairs

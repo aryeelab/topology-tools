@@ -1,6 +1,6 @@
 ---
 name: hic-preprocessing
-description: Preprocess paired-end restriction-enzyme Hi-C FASTQs (e.g. Arima Hi-C+, DpnII + HinfI) into a lossless BAM, MAPQ >= 1 contact pairs, dedup and restriction-fragment QC (dangling ends, self-circles, religation) and a balanced .mcool with the topology-tools preprocess-hic recipe (4DN/Open2C: bwa-mem2 mem -SP5M, pairtools parse --min-mapq 1 --walks-policy 5unique with mapq column, per-chromosome merge/dedup, pairtools restrict, pairix, cooler). Covers versions, every step and option, outputs, checks, and pooling replicates into one .mcool. Independent of workflow manager and scheduler.
+description: Preprocess paired-end restriction-enzyme Hi-C FASTQs (e.g. Arima Hi-C+, DpnII + HinfI) into a lossless BAM, contact pairs (MAPQ >= 1, or >= 0 to keep multi-mapping reads), dedup and restriction-fragment QC (dangling ends, self-circles, religation) and a balanced .mcool with the topology-tools preprocess-hic recipe (4DN/Open2C: bwa-mem2 mem -SP5M, pairtools parse --min-mapq 1 --walks-policy 5unique with mapq column, per-chromosome merge/dedup, pairtools restrict, pairix, cooler). Covers versions, every step and option, outputs, checks, and pooling replicates into one .mcool. Independent of workflow manager and scheduler.
 ---
 
 # Hi-C preprocessing (FASTQ → BAM, pairs, mcool)
@@ -42,7 +42,8 @@ pairtools sort chunk.pairs.lz4 > chunk.sorted.pairs   # the pipeline writes one 
 ```
 - `-SP5M`: no mate rescue or pairing, 5'-most alignment primary, split hits flagged secondary; bwa's default
   `-T 30`. pairtools 1.1.3 uses every SAM record of a read (secondary and supplementary), so `-M` changes only BAM flags.
-- `--min-mapq 1` (pairtools' default, as 4DN): a side with MAPQ 0 becomes `M`; keep `mapq1/mapq2` to filter later.
+- `--min-mapq 1` (default, as 4DN): a side with MAPQ 0 becomes `M` and its pair leaves the pairs. `--min-mapq 0`
+  (`MIN_MAPQ=0`, from 1.1.0) keeps it as `U` at bwa's randomly chosen primary, with `mapq` 0. Filter on `mapq1/mapq2` later.
 - `--walks-policy 5unique`: the 5'-most unique pair of a ligation walk. `--max-inter-align-gap` default (20).
 - The chunk BAM gets every record of every read pair, of every pair type, with pairtools' `Yt` tag.
 
@@ -69,7 +70,7 @@ bgzip -dc $SID.pairs.gz | pairtools select '(mapq1>=30) and (mapq2>=30)' \
  | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 $SIZES:1000 - base.cool
 cooler zoomify --balance -r 1000,2000,5000,...,10000000 -o $SID.mapq_30.mcool base.cool
 ```
-The pipeline records `min_mapq`, sample and version in the cooler metadata.
+The pipeline records `min_mapq`, the pairs' `pairs_min_mapq`, sample and version in the cooler metadata.
 
 **Pooling replicates** (`pool_mcools.py` / `preprocess-hic-pool.sh`): `cooler merge` the base resolutions
 (same MAPQ filter, chromosomes and resolutions), `cooler zoomify --balance`; the pooled sum must equal the inputs'.
@@ -79,7 +80,7 @@ Pool after per-replicate dedup, never by deduplicating replicates together.
 | File | Content |
 |---|---|
 | `<SID>.bam` + `.bai` | lossless: every alignment of every read pair, coordinate-sorted, `Yt` tags; duplicates not flagged |
-| `<SID>.pairs.gz` + `.px2` | deduplicated UU/UR/RU pairs, MAPQ ≥ 1, mapq, pos5/pos3, dist_to_5/3, read_len, rfrag columns |
+| `<SID>.pairs.gz` + `.px2` | deduplicated UU/UR/RU pairs, MAPQ ≥ `--min-mapq`, mapq, pos5/pos3, dist_to_5/3, read_len, rfrag columns |
 | `<SID>.dedup.stats.txt` | pairtools dedup stats with pre-dedup totals (keep the original) |
 | `<SID>.restrict_stats.tsv` | restriction-fragment categories of the deduplicated pairs |
 | `<SID>.hic_qc.json` | mapping, duplication, cis/trans, cis ≥1 kb / ≥20 kb, fragment artefact fractions, BAM check |
@@ -87,7 +88,7 @@ Pool after per-replicate dedup, never by deduplicating replicates together.
 
 ## Checks
 1. `hic_qc.json` `bam.lossless_check` is `pass`: BAM primary records = 2 × read pairs (the pipeline fails otherwise).
-2. The pairs header has `-SP5M` on the bwa `@PG`, `--min-mapq 1 --walks-policy 5unique` and the add-columns on parse,
+2. The pairs header has `-SP5M` on the bwa `@PG`, `--min-mapq` (1 or 0) `--walks-policy 5unique` and the add-columns on parse,
    pairtools 1.1.3, and a `pairtools_restrict` `@PG`.
 3. `total_nodups` in the dedup stats = data lines in `.pairs.gz` = `restrict_stats` `total`.
 4. The mcool metadata `min_mapq` is the threshold you meant; pool only mcools with the same one.
