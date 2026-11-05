@@ -20,7 +20,7 @@ FASTQ_GLOB="${FASTQ_GLOB:-}"
 OUTDIR="${OUTDIR:-}"                     # run dir (shared FS): provenance, versions, trace; outputs unless DATASET_DIR
 TMPDIR_NF="${TMPDIR_NF:-}"               # temp dir for pairtools sort/merge (shared FS)
 
-# Optional: dataset directory (<DS>): BAM, pairs, QC and mcool are copied to <DS>/{bam,pairs,qc,cool}.
+# Optional: dataset directory (<DS>): BAM to <DS>/bam, pairs and mcool to <DS>/pairs, QC to <DS>/qc.
 DATASET_DIR="${DATASET_DIR:-}"
 
 # Restriction fragments for pairtools restrict (QC only): a precomputed BED (FRAG_BED), or an in-silico digest
@@ -98,8 +98,8 @@ fi
 DS_OPTS=""
 if [ -n "${DATASET_DIR}" ]; then
     DATASET_DIR=$(abspath "${DATASET_DIR}")
-    mkdir -p "${DATASET_DIR}/pairs" "${DATASET_DIR}/bam" "${DATASET_DIR}/qc" "${DATASET_DIR}/cool"
-    DS_OPTS="--pairsdir '${DATASET_DIR}/pairs' --bamdir '${DATASET_DIR}/bam' --statsdir '${DATASET_DIR}/qc' --coolsdir '${DATASET_DIR}/cool'"
+    mkdir -p "${DATASET_DIR}/pairs" "${DATASET_DIR}/bam" "${DATASET_DIR}/qc"
+    DS_OPTS="--pairsdir '${DATASET_DIR}/pairs' --bamdir '${DATASET_DIR}/bam' --statsdir '${DATASET_DIR}/qc' --coolsdir '${DATASET_DIR}/pairs'"
 fi
 ASM_OPT=""
 [ -n "${ASSEMBLY}" ] && ASM_OPT="--assembly '${ASSEMBLY}'"

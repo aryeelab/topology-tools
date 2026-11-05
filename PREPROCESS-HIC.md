@@ -17,6 +17,7 @@ Open2C's distiller) and reuses the job layout of `microc-preprocess` (`MICROC-NF
 | `envs/preprocess-hic.yml` | Build spec of the env |
 | `envs/preprocess-hic-<version>.linux-64.explicit.txt` | Exact env of each release (install from this) |
 | `tests/preprocess-hic/` | Unit tests and an end-to-end test on synthetic data with known answers |
+| `skills/hic-preprocessing/SKILL.md` | Agent skill: the recipe, outputs, checks and comparisons, independent of Nextflow |
 
 ## Setup (once per user)
 
@@ -41,7 +42,7 @@ bash preprocess-hic-submit.sh
 | Setting | Default | |
 |---|---|---|
 | `SAMPLEID`, `BWA_INDEX`, `CHROM_SIZES`, `FASTQ_GLOB`, `OUTDIR`, `TMPDIR_NF` | required | `FASTQ_GLOB` must match every run of the sample (`fromFilePairs`); runs are merged before dedup |
-| `DATASET_DIR` | empty | copy outputs to `<DS>/{bam,pairs,qc,cool}` instead of `OUTDIR` |
+| `DATASET_DIR` | empty | copy outputs to `<DS>/bam`, `<DS>/pairs` (pairs and mcool) and `<DS>/qc` instead of `OUTDIR` (1.0.0 put the mcool in `<DS>/cool`) |
 | `FRAG_BED` | empty | precomputed restriction fragments (BED); otherwise digest `GENOME_FASTA` (default: the `BWA_INDEX` FASTA) with `ENZYMES` |
 | `ENZYMES` | `DpnII,HinfI` | Arima Hi-C+; see `digest_genome.py` for the others |
 | `MCOOL_MIN_MAPQ` | `30` | MAPQ (both sides) of the pairs binned into the `.mcool` |
@@ -95,7 +96,7 @@ DATASET_DIR/                            (or OUTDIR)
   qc/{sid}.flagstat.tsv                 # samtools flagstat of the BAM
   qc/{sid}.hic_qc.json                  # summary: mapping, duplication, cis/trans, cis >1 kb / >20 kb, fragment
                                         #   artefact fractions, BAM lossless check
-  cool/{sid}.mapq_{Q}.mcool             # balanced multi-resolution cooler
+  pairs/{sid}.mapq_{Q}.mcool            # balanced multi-resolution cooler
 OUTDIR/
   {sid}.preprocess-hic.provenance.json  # version + commit, params, FASTQs (path/size/mtime), tool versions,
                                         #   Slurm master job/node, times, QC summary
@@ -111,7 +112,7 @@ in the BAM that are not in `.pairs.gz` among UU/UR/RU).
 
 ```bash
 POOL_ID=KT OUTDIR=/scratch/hic/pooled bash preprocess-hic-pool.sh \
-    rep1/cool/rep1.mapq_30.mcool rep2/cool/rep2.mapq_30.mcool
+    rep1/pairs/rep1.mapq_30.mcool rep2/pairs/rep2.mapq_30.mcool
 ```
 Checks the inputs come from preprocess-hic with the same MAPQ filter, chromosomes and resolutions, sums them at
 the base resolution (`cooler merge`), coarsens and balances (`cooler zoomify --balance`), checks the pooled total

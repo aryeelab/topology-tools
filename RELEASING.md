@@ -91,7 +91,8 @@ options or tool versions changes output values, so it is at least a minor releas
      cooler metadata) and `PIPELINE_VERSION` in `preprocess-hic-submit.sh` and `preprocess-hic-pool.sh`;
    - add the exact environment the release was tested in: `envs/preprocess-hic-<version>.linux-64.explicit.txt`
      (`conda list -p <env> --explicit`), with `https://conda.anaconda.org/` URLs (replace a mirror's prefix);
-     if a tool version changed, update the checks in `preprocess-hic-submit.sh`.
+     if a tool version changed, update the checks in `preprocess-hic-submit.sh`;
+   - update `skills/hic-preprocessing/SKILL.md` (release number, and any change to versions, steps, options or defaults).
    Put the smoke-test numbers in the commit message.
 4. Tag and push:
    ```bash
