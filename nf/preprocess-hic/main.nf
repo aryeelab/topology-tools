@@ -149,7 +149,8 @@ process hic_merge {
         --flagstat \$SID.flagstat.tsv -o \$SID.hic_qc.json
     { pairtools --version; { bwa 2>&1 || true; } | grep Version; echo "bwa-mem2 \$(bwa-mem2 version 2>/dev/null | tail -1)";
       samtools --version | head -1; seqkit version; echo "cooler \$(cooler --version | awk '{print \$NF}')";
-      echo "pairix \$(pairix --help 2>&1 | grep -m1 -i version | awk '{print \$NF}')"; } > \$SID.tool_versions.txt
+      # the pairix 0.3.9 binary still prints "Version: 0.3.8": take the version from the conda package record
+      echo "pairix \$(basename \$(ls \$(dirname \$(command -v pairix))/../conda-meta/pairix-*.json 2>/dev/null | head -1) .json | cut -d- -f2) (binary: \$(pairix --help 2>&1 | grep -m1 -i version | awk '{print \$NF}'))"; } > \$SID.tool_versions.txt
     """
 }
 
@@ -218,6 +219,7 @@ workflow.onComplete {
         nextflow_version: workflow.nextflow.version.toString(),
         session_id: workflow.sessionId.toString(),
         command_line: workflow.commandLine,
+        conda_env: System.getenv('PREPROCESS_HIC_ENV'),
         slurm_master_job: System.getenv('SLURM_JOB_ID'),
         master_node: InetAddress.getLocalHost().getHostName(),
         params: [aligner: params.aligner, bwa_mem_options: '-SP5M', min_mapq: params.min_mapq, walks_policy: '5unique',
