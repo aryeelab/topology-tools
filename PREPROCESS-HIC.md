@@ -87,6 +87,18 @@ The digest (`digest_genome.py`): fragments from cut to cut (DpnII `^GATC`, HinfI
 chrom-sizes order. Mouse GRCm38 with DpnII+HinfI: 14.6M fragments (median 122 bp), 1.6 min, 1.3 GB. Digest once and pass
 `FRAG_BED`, or let each run digest.
 
+### Changes in 1.1.0
+- `MIN_MAPQ` (`pairtools parse --min-mapq`, default 1 as in 1.0.0). `MIN_MAPQ=0` keeps pairs with a multi-mapping
+  side, at bwa's randomly chosen primary location with `mapq` 0, so reads from repeats stay in the pairs file.
+  On 4M read pairs of an Arima mouse library: 3,734,380 deduplicated pairs instead of 2,837,981 (+31.6%; 897,078 with a
+  MAPQ 0 side), MU/MM pairs become UU, trans 29.5% instead of 16.9% (random placement of repeat reads), `.pairs.gz`
+  154 instead of 117 MB. The MAPQ ≥ 30 `.mcool` loses 18 of 2.57M contacts: dedup can keep a MAPQ 0 duplicate instead
+  of the MAPQ ≥ 30 copy. Filter on `mapq1/mapq2` for analyses that are not about repeats.
+- With `MIN_MAPQ=1`, outputs are those of 1.0.0 (same reads: pairs, restriction stats and mcool byte-identical; BAM
+  records and dedup stats identical, in a different order).
+- The cooler metadata records the pairs' parse MAPQ (`pairs_min_mapq`); with `DATASET_DIR` the mcool goes to
+  `<DS>/pairs/` (1.0.0: `<DS>/cool/`).
+
 ## Outputs
 
 ```
