@@ -1,0 +1,1 @@
+../../bin/split_pairs_by_chrom1.py
