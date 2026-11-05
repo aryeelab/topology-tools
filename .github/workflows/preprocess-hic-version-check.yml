@@ -1,0 +1,27 @@
+# A preprocess-hic release tag preprocess-hic/vX.Y.Z must match manifest.version in nf/preprocess-hic/nextflow.config
+# and PIPELINE_VERSION in preprocess-hic-submit.sh and preprocess-hic-pool.sh; the release env file must exist.
+name: preprocess-hic-version-check
+on:
+  push:
+    tags: ["preprocess-hic/v*"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches pipeline versions
+        run: |
+          tag=${GITHUB_REF_NAME#preprocess-hic/v}
+          nf=$(sed -n "s/^ *version *= *'\([^']*\)'.*/\1/p" nf/preprocess-hic/nextflow.config)
+          sh=$(sed -n 's/^PIPELINE_VERSION=\(.*\)$/\1/p' preprocess-hic-submit.sh)
+          pool=$(sed -n 's/^PIPELINE_VERSION=\(.*\)$/\1/p' preprocess-hic-pool.sh)
+          echo "tag=$tag nextflow.config=$nf submit=$sh pool=$pool"
+          [ "$tag" = "$nf" ] && [ "$tag" = "$sh" ] && [ "$tag" = "$pool" ] || { echo "::error::tag preprocess-hic/v$tag does not match nextflow.config $nf / submit $sh / pool $pool"; exit 1; }
+          [ -f "envs/preprocess-hic-$tag.linux-64.explicit.txt" ] || { echo "::error::missing envs/preprocess-hic-$tag.linux-64.explicit.txt"; exit 1; }
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install pytest && python -m pytest -v tests/preprocess-hic

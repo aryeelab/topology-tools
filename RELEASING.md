@@ -76,3 +76,34 @@ Run `bash $SRC/microc-nf-submit.sh` from anywhere. Nextflow runs in `OUTDIR` (it
 `.nextflow.log`, the master job log `<SAMPLEID>.master.<jobid>.log` and the per-launch trace `<SAMPLEID>.trace.<timestamp>.txt` are there; the checkout is never written to)
 and its work dir is `OUTDIR/work`; pairs and BAM are copied out, so `work/` can be removed once a
 run's outputs are in place.
+
+## preprocess-hic (`nf/preprocess-hic/`, `preprocess-hic-submit.sh`, `preprocess-hic-pool.sh`)
+Hi-C FASTQ → lossless BAM, pairs, QC, mcool (see `PREPROCESS-HIC.md`). Any change to align/parse/dedup/restrict/cooler
+options or tool versions changes output values, so it is at least a minor release.
+1. Tests pass in the release env, with its `bin` on `PATH` (the end-to-end test runs Nextflow locally on synthetic data):
+   `PATH=<env>/bin:$PATH JAVA_HOME=<env> python -m pytest -v tests/preprocess-hic`
+2. Smoke test on the cluster: a few million read pairs of a real library with a small `CHUNK_READS` (several chunks, so
+   merge is exercised), `OUTDIR` in scratch. Check the provenance JSON, `hic_qc.json` (lossless check `pass`, mapping,
+   duplication, cis/trans and fragment-artefact rates plausible for the protocol), the parse options in the pairs header,
+   and compare with the previous release's outputs for the same reads (pairs by readID, stats, mcool sums).
+3. In one release commit:
+   - set `manifest.version` in `nf/preprocess-hic/nextflow.config` (written to the provenance JSON, `hic_qc.json` and the
+     cooler metadata) and `PIPELINE_VERSION` in `preprocess-hic-submit.sh` and `preprocess-hic-pool.sh`;
+   - add the exact environment the release was tested in: `envs/preprocess-hic-<version>.linux-64.explicit.txt`
+     (`conda list -p <env> --explicit`), with `https://conda.anaconda.org/` URLs (replace a mirror's prefix);
+     if a tool version changed, update the checks in `preprocess-hic-submit.sh`.
+   Put the smoke-test numbers in the commit message.
+4. Tag and push:
+   ```bash
+   git tag -a preprocess-hic/v<version> -m "preprocess-hic <version>: <one-line summary>"
+   git push origin main preprocess-hic/v<version>
+   ```
+5. Check the `preprocess-hic-version-check` CI run; create the GitHub release from the tag (`--latest=false`).
+
+### Installing a released version
+```bash
+V=1.0.0; SRC=<prefix>/topology-tools/preprocess-hic-$V; ENV=<envs>/preprocess-hic-$V
+git clone -q https://github.com/aryeelab/topology-tools.git "$SRC" && (cd "$SRC" && git checkout -q preprocess-hic/v$V)
+conda create -q -y -p "$ENV" --file "$SRC/envs/preprocess-hic-$V.linux-64.explicit.txt"
+(cd "$SRC" && PATH="$ENV/bin:$PATH" JAVA_HOME="$ENV" "$ENV/bin/python" -m pytest -q tests/preprocess-hic)
+```
