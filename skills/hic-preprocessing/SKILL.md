@@ -6,7 +6,7 @@ description: Preprocess paired-end restriction-enzyme Hi-C FASTQs (e.g. Arima Hi
 # Hi-C preprocessing (FASTQ → BAM, pairs, mcool)
 
 The recipe of the `preprocess-hic` component of https://github.com/aryeelab/topology-tools (tags
-`preprocess-hic/vX.Y.Z`; this skill describes 1.0.0). The repo's Nextflow + SLURM implementation and its
+`preprocess-hic/vX.Y.Z`; this skill describes 1.1.0). The repo's Nextflow + SLURM implementation and its
 resources are documented in `PREPROCESS-HIC.md`; the steps below work with any workflow manager.
 For Micro-C use `microc-preprocessing` instead (no restriction fragments, MAPQ 30, deduplicated BAM).
 
@@ -43,7 +43,7 @@ pairtools sort chunk.pairs.lz4 > chunk.sorted.pairs   # the pipeline writes one 
 - `-SP5M`: no mate rescue or pairing, 5'-most alignment primary, split hits flagged secondary; bwa's default
   `-T 30`. pairtools 1.1.3 uses every SAM record of a read (secondary and supplementary), so `-M` changes only BAM flags.
 - `--min-mapq 1` (default, as 4DN): a side with MAPQ 0 becomes `M` and its pair leaves the pairs. `--min-mapq 0`
-  (`MIN_MAPQ=0`, from 1.1.0) keeps it as `U` at bwa's randomly chosen primary, with `mapq` 0. Filter on `mapq1/mapq2` later.
+  (`MIN_MAPQ=0`) keeps it as `U` at bwa's randomly chosen primary, with `mapq` 0. Filter on `mapq1/mapq2` later.
 - `--walks-policy 5unique`: the 5'-most unique pair of a ligation walk. `--max-inter-align-gap` default (20).
 - The chunk BAM gets every record of every read pair, of every pair type, with pairtools' `Yt` tag.
 
