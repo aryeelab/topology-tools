@@ -30,7 +30,8 @@ def read_flagstat(path):
         for line in f:
             if line.strip():
                 passed, failed, cat = line.rstrip("\n").split("\t")[:3]
-                d[cat] = int(passed) + int(failed)
+                if passed.isdigit() and failed.isdigit():  # skip the "mapped %" style lines
+                    d[cat] = int(passed) + int(failed)
     return d
 
 
