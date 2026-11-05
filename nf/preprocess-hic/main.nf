@@ -10,8 +10,6 @@ if (!params.frag_bed && !params.genome_fasta) error "Set --frag_bed or --genome_
 // An unmatched glob gives an empty channel, and Nextflow would then report success with no outputs.
 if (!file(params.fq_input)) error "No FASTQs match --fq_input ${params.fq_input}"
 
-def resolutions = params.mcool_resolutions.toString().split(',')*.trim()
-def base_res = resolutions[0]
 def mcool_name = "${params.sample_id}.mapq_${params.mcool_min_mapq}.mcool"
 
 // Split each FASTQ pair into chunks of chunk_reads reads (as microc-preprocess 1.0.3+).
@@ -163,20 +161,22 @@ process hic_mcool {
     path pairs
     path chrom_sizes
     output:
-    path mcool_name
+    path "${params.sample_id}.mapq_${params.mcool_min_mapq}.mcool"
 
     """
     #!/bin/bash
     set -eo pipefail
     trap '[ -n "${params.failed_nodes_file}" ] && hostname >> ${params.failed_nodes_file}' ERR
     export TMPDIR=${params.tmpdir}
+    BASE_RES=\$(echo ${params.mcool_resolutions} | cut -d, -f1)
+    MCOOL=${params.sample_id}.mapq_${params.mcool_min_mapq}.mcool
     # Recorded in the cooler's metadata (read by preprocess-hic-pool.sh to refuse mixing MAPQ thresholds).
     printf '%s\\n' '{"pipeline": "preprocess-hic", "pipeline_version": "${workflow.manifest.version}", "sample_id": "${params.sample_id}", "min_mapq": ${params.mcool_min_mapq}, "pairs_filter": "(mapq1 >= ${params.mcool_min_mapq}) and (mapq2 >= ${params.mcool_min_mapq})"}' > meta.json
     bgzip -dc -@2 ${pairs} | \
     pairtools select '(mapq1 >= ${params.mcool_min_mapq}) and (mapq2 >= ${params.mcool_min_mapq})' | \
     cooler cload pairs ${params.assembly ? "--assembly ${params.assembly}" : ""} --metadata meta.json \
-        -c1 2 -p1 3 -c2 4 -p2 5 ${chrom_sizes}:${base_res} - base.cool
-    cooler zoomify -p ${task.cpus} --balance -r ${params.mcool_resolutions} -o ${mcool_name} base.cool
+        -c1 2 -p1 3 -c2 4 -p2 5 ${chrom_sizes}:\$BASE_RES - base.cool
+    cooler zoomify -p ${task.cpus} --balance -r ${params.mcool_resolutions} -o \$MCOOL base.cool
     rm base.cool
     """
 }

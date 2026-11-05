@@ -236,3 +236,23 @@ def test_e2e_provenance(run):
     assert len(prov["inputs"]) == 4
     assert any(v.startswith("pairtools") and v.endswith("1.1.3") for v in prov["tool_versions"])
     assert prov["qc"]["bam"]["lossless_check"] == "pass"
+
+
+@need_tools
+def test_e2e_pool(run, tmp_path):
+    import cooler
+    mc = str(run["out"] / "test.mapq_30.mcool")
+    pool = tmp_path / "pool"
+    subprocess.run([sys.executable, os.path.join(BIN, "pool_mcools.py"), "--pool-id", "P", "--outdir", str(pool),
+                    "--nproc", "2", "--version", "test", mc, mc], check=True)
+    out = pool / "P.mapq_30.mcool"
+    one = cooler.Cooler(f"{mc}::/resolutions/1000").info["sum"]
+    assert cooler.fileops.list_coolers(str(out)) == ["/resolutions/1000", "/resolutions/5000", "/resolutions/20000"]
+    for res in (1000, 5000, 20000):
+        c = cooler.Cooler(f"{out}::/resolutions/{res}")
+        assert c.info["sum"] == 2 * one and "weight" in c.bins().columns
+    prov = json.loads((pool / "P.mapq_30.pool.provenance.json").read_text())
+    assert prov["sum_check"] == "pass" and prov["min_mapq"] == 30 and len(prov["inputs"]) == 2
+    # never overwrites
+    r = subprocess.run([sys.executable, os.path.join(BIN, "pool_mcools.py"), "--pool-id", "P", "--outdir", str(pool), mc, mc])
+    assert r.returncode != 0
