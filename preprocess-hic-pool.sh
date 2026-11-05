@@ -9,7 +9,7 @@ POOL_ID="${POOL_ID:-}"
 OUTDIR="${OUTDIR:-}"
 NPROC="${NPROC:-8}"
 MEM="${MEM:-32G}"
-PIPELINE_VERSION=1.0.0
+PIPELINE_VERSION=1.1.0-dev
 PREPROCESS_HIC_ENV=${PREPROCESS_HIC_ENV:-${HOME}/miniforge3/envs/preprocess-hic-${PIPELINE_VERSION}}
 
 [ -n "${POOL_ID}" ] && [ -n "${OUTDIR}" ] || { echo "Error: set POOL_ID and OUTDIR."; exit 1; }

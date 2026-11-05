@@ -172,7 +172,7 @@ process hic_mcool {
     BASE_RES=\$(echo ${params.mcool_resolutions} | cut -d, -f1)
     MCOOL=${params.sample_id}.mapq_${params.mcool_min_mapq}.mcool
     # Recorded in the cooler's metadata (read by preprocess-hic-pool.sh to refuse mixing MAPQ thresholds).
-    printf '%s\\n' '{"pipeline": "preprocess-hic", "pipeline_version": "${workflow.manifest.version}", "sample_id": "${params.sample_id}", "min_mapq": ${params.mcool_min_mapq}, "pairs_filter": "(mapq1 >= ${params.mcool_min_mapq}) and (mapq2 >= ${params.mcool_min_mapq})"}' > meta.json
+    printf '%s\\n' '{"pipeline": "preprocess-hic", "pipeline_version": "${workflow.manifest.version}", "sample_id": "${params.sample_id}", "min_mapq": ${params.mcool_min_mapq}, "pairs_min_mapq": ${params.min_mapq}, "pairs_filter": "(mapq1 >= ${params.mcool_min_mapq}) and (mapq2 >= ${params.mcool_min_mapq})"}' > meta.json
     bgzip -dc -@2 ${pairs} | \
     pairtools select '(mapq1 >= ${params.mcool_min_mapq}) and (mapq2 >= ${params.mcool_min_mapq})' | \
     cooler cload pairs ${params.assembly ? "--assembly ${params.assembly}" : ""} --metadata meta.json \

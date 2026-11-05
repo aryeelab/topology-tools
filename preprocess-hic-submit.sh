@@ -29,13 +29,16 @@ FRAG_BED="${FRAG_BED:-}"
 GENOME_FASTA="${GENOME_FASTA:-}"
 ENZYMES="${ENZYMES:-DpnII,HinfI}"
 
+MIN_MAPQ="${MIN_MAPQ:-1}"               # pairtools parse --min-mapq: 1 (sides with MAPQ 0 become M and their pairs
+                                         # leave the pairs file) or 0 (keep them: bwa's random primary of a multi-mapping
+                                         # read becomes a U side with mapq 0; filter on mapq1/mapq2 downstream)
 MCOOL_MIN_MAPQ="${MCOOL_MIN_MAPQ:-30}"   # MAPQ (both sides) of the pairs binned into the .mcool
 MCOOL_RESOLUTIONS="${MCOOL_RESOLUTIONS:-1000,2000,5000,10000,25000,50000,100000,250000,500000,1000000,2500000,5000000,10000000}"
 ASSEMBLY="${ASSEMBLY:-}"                 # cooler --assembly label, e.g. mm10
 ALIGNER="${ALIGNER:-bwa-mem2}"           # bwa-mem2 (needs <BWA_INDEX>.0123 and .bwt.2bit.64) | bwa
 CHUNK_READS="${CHUNK_READS:-30000000}"   # reads per FASTQ chunk for parallel alignment
 
-PIPELINE_VERSION=1.0.0
+PIPELINE_VERSION=1.1.0-dev
 PREPROCESS_HIC_ENV=${PREPROCESS_HIC_ENV:-${HOME}/miniforge3/envs/preprocess-hic-${PIPELINE_VERSION}}
 # ============================================================
 
@@ -76,6 +79,7 @@ case "${ALIGNER}" in
     *) echo "Error: ALIGNER must be bwa-mem2 or bwa (got '${ALIGNER}')."; exit 1;;
 esac
 if [[ ! "${MCOOL_MIN_MAPQ}" =~ ^[0-9]+$ ]]; then echo "Error: MCOOL_MIN_MAPQ must be an integer."; exit 1; fi
+if [[ ! "${MIN_MAPQ}" =~ ^[0-9]+$ ]]; then echo "Error: MIN_MAPQ must be an integer."; exit 1; fi
 
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "${PWD}/$1" ;; esac; }
 WORKDIR="${NXF_WORK:-${OUTDIR}/work}"
@@ -134,6 +138,7 @@ sbatch --mem=4G ${EXCLUDE_OPT} -J "hic-${SAMPLEID}" -o "${OUTDIR}/${SAMPLEID}.ma
     --failed_nodes_file '${FAILED_NODES_FILE}' \
     --aligner ${ALIGNER} \
     --chunk_reads ${CHUNK_READS} \
+    --min_mapq ${MIN_MAPQ} \
     --mcool_min_mapq ${MCOOL_MIN_MAPQ} \
     --mcool_resolutions '${MCOOL_RESOLUTIONS}' \
     --git_commit '${GIT_COMMIT}' \

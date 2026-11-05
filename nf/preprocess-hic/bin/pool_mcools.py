@@ -51,6 +51,7 @@ def main(argv=None):
         inputs.append({"path": m, "size": st.st_size,
                        "mtime": datetime.datetime.fromtimestamp(st.st_mtime).astimezone().isoformat(timespec="seconds"),
                        "sample_id": meta.get("sample_id"), "min_mapq": meta["min_mapq"],
+                       "pairs_min_mapq": meta.get("pairs_min_mapq"),
                        "pipeline_version": meta.get("pipeline_version"), "sum_base": int(c.info["sum"])})
         ress.append(res)
         metas.append(meta)

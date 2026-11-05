@@ -108,13 +108,21 @@ need_tools = pytest.mark.skipif(any(shutil.which(t) is None for t in TOOLS),
 
 
 @pytest.fixture(scope="module")
-def run(tmp_path_factory):
-    d = tmp_path_factory.mktemp("e2e")
-    data = d / "data"
+def data(tmp_path_factory):
+    data = tmp_path_factory.mktemp("e2e_data")
     make_test_data.main(str(data))
     fa = str(data / "genome.fa")
     for cmd in (["bwa", "index", fa], ["bwa-mem2", "index", fa]):
         subprocess.run(cmd, check=True, capture_output=True)
+    return data
+
+
+# pairtools parse --min-mapq: 1 (default; MAPQ 0 sides are M, their pairs leave the pairs file) and 0 (kept as U).
+@pytest.fixture(scope="module", params=[1, 0], ids=["minmapq1", "minmapq0"])
+def run(request, data, tmp_path_factory):
+    mq = request.param
+    d = tmp_path_factory.mktemp(f"e2e_mapq{mq}")
+    fa = str(data / "genome.fa")
     out = d / "out"
     out.mkdir()
     cmd = ["nextflow", "run", os.path.join(NF, "main.nf"), "-profile", "local",
@@ -122,11 +130,17 @@ def run(tmp_path_factory):
            "--chrom_sizes", str(data / "chrom.sizes"),
            "--fq_input", str(data / "fastq" / "*_{1,2}.fastq.gz"),
            "--outdir", str(out), "--tmpdir", str(d / "tmp"), "--chunk_reads", "200",
-           "--mcool_resolutions", "1000,5000,20000", "--assembly", "synthetic", "--git_commit", "test"]
+           "--mcool_resolutions", "1000,5000,20000", "--assembly", "synthetic", "--git_commit", "test",
+           "--min_mapq", str(mq)]
     r = subprocess.run(cmd, cwd=str(out), capture_output=True, text=True)
     print(r.stdout[-5000:], r.stderr[-5000:])
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
-    return {"out": out, "data": data, "expected": json.loads((data / "expected.json").read_text())}
+    exp = json.loads((data / "expected.json").read_text())
+    n = exp["categories"]
+    nodup = n["cis_valid"] + n["trans"] + n["dangling_end"] + n["self_circle"] + n["religation"]
+    # with --min-mapq 0 the pairs with one side in the duplicated segment are kept (as UU, that side mapq 0)
+    return {"out": out, "data": data, "expected": exp, "mq": mq, "nodup_unique": nodup,
+            "nodup": nodup + (n["multi"] if mq == 0 else 0)}
 
 
 def read_pairs(path):
@@ -157,16 +171,20 @@ def test_e2e_pairs(run):
     for p in pairs:
         name_cat = p["readID"].split("_", 1)[1]
         cats[name_cat] = cats.get(name_cat, 0) + 1
+        if name_cat == "multi":
+            assert min(int(p["mapq1"]), int(p["mapq2"])) == 0 and p["pair_type"] == "UU", p
+            continue
         assert classify(p) == ("cis_valid" if name_cat == "dup" else name_cat), p
         assert int(p["mapq1"]) >= 1 and int(p["mapq2"]) >= 1
     n = run["expected"]["categories"]
     assert cats.get("cis_valid", 0) + cats.get("dup", 0) == n["cis_valid"]   # one of each duplicate kept
     for c in ["trans", "dangling_end", "self_circle", "religation"]:
         assert cats.get(c, 0) == n[c], c
-    for c in ["multi", "unmapped", "half_mapped"]:
+    assert cats.get("multi", 0) == (n["multi"] if run["mq"] == 0 else 0)
+    for c in ["unmapped", "half_mapped"]:
         assert c not in cats
     parse = [h for h in header if "ID:pairtools_parse" in h][0]
-    assert "--min-mapq 1" in parse and "--walks-policy 5unique" in parse and "mapq,pos5,pos3" in parse
+    assert f"--min-mapq {run['mq']}" in parse and "--walks-policy 5unique" in parse and "mapq,pos5,pos3" in parse
     assert any("ID:bwa-mem2" in h and "-SP5M" in h for h in header)
     assert any("ID:pairtools_restrict" in h for h in header)
     cols = [h for h in header if h.startswith("#columns:")][0].split()[1:]
@@ -174,7 +192,8 @@ def test_e2e_pairs(run):
         assert c in cols
     # pairix index: query the trans block
     r = subprocess.run(["pairix", str(run["out"] / "test.pairs.gz"), "chrA|chrB"], capture_output=True, text=True, check=True)
-    assert len(r.stdout.splitlines()) == n["trans"]
+    trans_multi = sum(1 for p in pairs if p["readID"].endswith("_multi") and p["chrom1"] != p["chrom2"])
+    assert len(r.stdout.splitlines()) == n["trans"] + trans_multi
 
 
 @need_tools
@@ -184,13 +203,16 @@ def test_e2e_stats(run):
     assert int(s["total"]) == run["expected"]["read_pairs"]
     assert int(s["total_dups"]) == n["dup"]
     assert int(s["total_unmapped"]) == n["unmapped"]
-    nodup = n["cis_valid"] + n["trans"] + n["dangling_end"] + n["self_circle"] + n["religation"]
+    nodup = run["nodup"]
     assert int(s["total_nodups"]) == nodup
-    r = dict(l.split("\t") for l in (run["out"] / "test.restrict_stats.tsv").read_text().splitlines())
-    assert {k: int(v) for k, v in r.items()} == {
-        "total": nodup, "mapped": nodup, "trans": n["trans"], "cis": nodup - n["trans"],
-        "dangling_end": n["dangling_end"], "self_circle": n["self_circle"], "same_fragment_same_strand": 0,
-        "religation": n["religation"], "adjacent_other": 0, "cis_valid": n["cis_valid"]}
+    types = {k.split("/", 1)[1] for k in s if k.startswith("pair_types/")}
+    assert (not any("M" in t for t in types)) if run["mq"] == 0 else ({"MU", "UM"} & types)
+    r = {k: int(v) for k, v in (l.split("\t") for l in (run["out"] / "test.restrict_stats.tsv").read_text().splitlines())}
+    extra = n["multi"] if run["mq"] == 0 else 0   # multi pairs: valid cis or trans, by bwa's random primary
+    assert r["total"] == r["mapped"] == nodup and r["trans"] + r["cis"] == nodup
+    assert (r["dangling_end"], r["self_circle"], r["religation"]) == (n["dangling_end"], n["self_circle"], n["religation"])
+    assert r["same_fragment_same_strand"] == 0 and r["adjacent_other"] == 0
+    assert r["cis_valid"] + r["trans"] == n["cis_valid"] + n["trans"] + extra
     qc = json.loads((run["out"] / "test.hic_qc.json").read_text())
     assert qc["bam"]["lossless_check"] == "pass"
     assert qc["read_pairs"] == run["expected"]["read_pairs"]
@@ -210,7 +232,10 @@ def test_e2e_bam_lossless(run):
     assert "SO:coordinate" in hdr
     yt = subprocess.run(f"samtools view {bam} | grep -o 'Yt:Z:[A-Z]*' | sort -u", shell=True,
                         capture_output=True, text=True).stdout.split()
-    assert {"Yt:Z:UU", "Yt:Z:NN", "Yt:Z:MU"} <= set(yt) or {"Yt:Z:UU", "Yt:Z:NN", "Yt:Z:UM"} <= set(yt)
+    if run["mq"] == 0:
+        assert {"Yt:Z:UU", "Yt:Z:NN"} <= set(yt) and not any("M" in t[5:] for t in yt)
+    else:
+        assert {"Yt:Z:UU", "Yt:Z:NN", "Yt:Z:MU"} <= set(yt) or {"Yt:Z:UU", "Yt:Z:NN", "Yt:Z:UM"} <= set(yt)
 
 
 @need_tools
@@ -218,21 +243,19 @@ def test_e2e_mcool(run):
     import cooler
     mc = str(run["out"] / "test.mapq_30.mcool")
     assert cooler.fileops.list_coolers(mc) == ["/resolutions/1000", "/resolutions/5000", "/resolutions/20000"]
-    n = run["expected"]["categories"]
-    nodup = n["cis_valid"] + n["trans"] + n["dangling_end"] + n["self_circle"] + n["religation"]
     for res in (1000, 5000, 20000):
         c = cooler.Cooler(f"{mc}::/resolutions/{res}")
-        assert c.info["sum"] == nodup                           # all unique reads have MAPQ 60
+        assert c.info["sum"] == run["nodup_unique"]   # unique reads have MAPQ 60; MAPQ 0 pairs never reach the mcool
         assert "weight" in c.bins().columns
     meta = cooler.Cooler(f"{mc}::/resolutions/1000").info["metadata"]
-    assert meta["min_mapq"] == 30 and meta["pipeline"] == "preprocess-hic"
+    assert meta["min_mapq"] == 30 and meta["pairs_min_mapq"] == run["mq"] and meta["pipeline"] == "preprocess-hic"
 
 
 @need_tools
 def test_e2e_provenance(run):
     prov = json.loads((run["out"] / "test.preprocess-hic.provenance.json").read_text())
     assert prov["success"] is True and prov["pipeline"] == "preprocess-hic"
-    assert prov["params"]["bwa_mem_options"] == "-SP5M" and prov["params"]["min_mapq"] == 1
+    assert prov["params"]["bwa_mem_options"] == "-SP5M" and prov["params"]["min_mapq"] == run["mq"]
     assert len(prov["inputs"]) == 4
     assert any(v.startswith("pairtools") and v.endswith("1.1.3") for v in prov["tool_versions"])
     assert prov["qc"]["bam"]["lossless_check"] == "pass"
