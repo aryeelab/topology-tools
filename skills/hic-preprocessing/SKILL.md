@@ -6,7 +6,7 @@ description: Preprocess paired-end restriction-enzyme Hi-C FASTQs (e.g. Arima Hi
 # Hi-C preprocessing (FASTQ → BAM, pairs, mcool)
 
 The recipe of the `preprocess-hic` component of https://github.com/aryeelab/topology-tools (tags
-`preprocess-hic/vX.Y.Z`; this skill describes 1.1.0). The repo's Nextflow + SLURM implementation and its
+`preprocess-hic/vX.Y.Z`; this skill describes 1.1.1). The repo's Nextflow + SLURM implementation and its
 resources are documented in `PREPROCESS-HIC.md`; the steps below work with any workflow manager.
 For Micro-C use `microc-preprocessing` instead (no restriction fragments, MAPQ 30, deduplicated BAM).
 
