@@ -15,7 +15,8 @@ set -euo pipefail
 SAMPLEID="${SAMPLEID:-}"                 # sample identifier
 BWA_INDEX="${BWA_INDEX:-}"               # indexed FASTA (bwa and/or bwa-mem2 index files next to it), or a .tar.gz
 CHROM_SIZES="${CHROM_SIZES:-}"           # chromosome sizes of the same genome; its order sets pairs and cooler order
-# fromFilePairs glob over every run of the sample, e.g. "/path/fastq/{SRR1,SRR2}_{1,2}.fastq.gz"
+# glob over every FASTQ of the sample, e.g. "/path/fastq/{SRR1,SRR2}_{1,2}.fastq.gz" or "/path/fastq/S1_*_R{1,2}_001.fastq.gz";
+# files are paired by run name (<run>_1/_2 or _R1/_R2, optional _001), and each run needs exactly one R1 and one R2
 FASTQ_GLOB="${FASTQ_GLOB:-}"
 OUTDIR="${OUTDIR:-}"                     # run dir (shared FS): provenance, versions, trace; outputs unless DATASET_DIR
 TMPDIR_NF="${TMPDIR_NF:-}"               # temp dir for pairtools sort/merge (shared FS)

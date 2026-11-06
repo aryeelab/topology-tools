@@ -41,7 +41,7 @@ bash preprocess-hic-submit.sh
 
 | Setting | Default | |
 |---|---|---|
-| `SAMPLEID`, `BWA_INDEX`, `CHROM_SIZES`, `FASTQ_GLOB`, `OUTDIR`, `TMPDIR_NF` | required | `FASTQ_GLOB` must match every run of the sample (`fromFilePairs`); runs are merged before dedup |
+| `SAMPLEID`, `BWA_INDEX`, `CHROM_SIZES`, `FASTQ_GLOB`, `OUTDIR`, `TMPDIR_NF` | required | `FASTQ_GLOB` matches every FASTQ of the sample; files are paired by run name (`<run>_1`/`_2` or `_R1`/`_R2`, optional `_001`) and each run needs exactly one R1 and one R2 (from 1.1.1; 1.1.0's `fromFilePairs` paired files across runs with a `{run1,run2}` glob and stopped at the chunk check). Runs are merged before dedup |
 | `DATASET_DIR` | empty | copy outputs to `<DS>/bam`, `<DS>/pairs` (pairs and mcool) and `<DS>/qc` instead of `OUTDIR` (1.0.0 put the mcool in `<DS>/cool`) |
 | `FRAG_BED` | empty | precomputed restriction fragments (BED); otherwise digest `GENOME_FASTA` (default: the `BWA_INDEX` FASTA) with `ENZYMES` |
 | `ENZYMES` | `DpnII,HinfI` | Arima Hi-C+; see `digest_genome.py` for the others |
@@ -86,6 +86,14 @@ bash preprocess-hic-submit.sh
 The digest (`digest_genome.py`): fragments from cut to cut (DpnII `^GATC`, HinfI `G^ANTC`, union of sites), in
 chrom-sizes order. Mouse GRCm38 with DpnII+HinfI: 14.6M fragments (median 122 bp), 1.6 min, 1.3 GB. Digest once and pass
 `FRAG_BED`, or let each run digest.
+
+### Changes in 1.1.1
+- FASTQs are paired by run name, and a run without exactly one R1 and one R2 stops the pipeline before any job.
+  1.1.0 used Nextflow's `fromFilePairs`, which with a `{run1,run2}_{1,2}` glob paired R1 of one run with R2 of
+  another (the R1/R2 chunk-count check stopped those runs; no wrong pairs were written).
+- `hic_align` asks for 40 GB (+16 GB per retry) instead of 28 GB: a 30M-read chunk peaks at 29.4 GB (mouse).
+- Outputs are unchanged, and the `split_fastq` and `hic_align` tasks hash as in 1.1.0, so `-resume` of a 1.1.0 run
+  reuses its finished chunks.
 
 ### Changes in 1.1.0
 - `MIN_MAPQ` (`pairtools parse --min-mapq`, default 1 as in 1.0.0). `MIN_MAPQ=0` keeps pairs with a multi-mapping
@@ -140,7 +148,7 @@ overwrites.
 |---|---|---|---|
 | `split_fastq` | 4 | 16 GB | one per FASTQ pair |
 | `digest_genome` | 1 | 8 GB | once per run unless `FRAG_BED` |
-| `hic_align` | 6 | 28 GB | bwa-mem2 index ~19 GB for human/mouse |
+| `hic_align` | 6 | 40 GB (+16 GB per retry) | mouse, 30M-read chunk: 29.4 GB peak (bwa-mem2 21→25 GB through the chunk, samtools sort 2.4 GB); 1.1.0 asked 28 GB and was killed near the end of most chunks |
 | `hic_merge` | 8 | 96 GB | 8 chromosome pipelines at once; each `pairtools restrict` loads the whole fragment BED (mouse DpnII+HinfI, 14.6M fragments: ~6.5 GB peak, ~1:45 per load) |
 | `hic_mcool` | 8 | 32 GB | cload + zoomify + balance at every resolution |
 
