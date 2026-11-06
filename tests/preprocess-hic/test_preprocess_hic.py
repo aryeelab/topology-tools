@@ -128,7 +128,8 @@ def run(request, data, tmp_path_factory):
     cmd = ["nextflow", "run", os.path.join(NF, "main.nf"), "-profile", "local",
            "--sample_id", "test", "--bwa_index", fa, "--genome_fasta", fa,
            "--chrom_sizes", str(data / "chrom.sizes"),
-           "--fq_input", str(data / "fastq" / "*_{1,2}.fastq.gz"),
+           # MAPQ 0 run: the {run1,run2}_{1,2} glob form, which 1.1.0 (fromFilePairs) paired across runs
+           "--fq_input", str(data / "fastq" / ("*_{1,2}.fastq.gz" if mq == 1 else "{runA,runB}_{1,2}.fastq.gz")),
            "--outdir", str(out), "--tmpdir", str(d / "tmp"), "--chunk_reads", "200",
            "--mcool_resolutions", "1000,5000,20000", "--assembly", "synthetic", "--git_commit", "test",
            "--min_mapq", str(mq)]
@@ -279,3 +280,28 @@ def test_e2e_pool(run, tmp_path):
     # never overwrites
     r = subprocess.run([sys.executable, os.path.join(BIN, "pool_mcools.py"), "--pool-id", "P", "--outdir", str(pool), mc, mc])
     assert r.returncode != 0
+
+
+@need_tools
+def test_e2e_runs_paired_by_name(run):
+    log = (run["out"] / ".nextflow.log").read_text()
+    assert "FASTQ runs: runA, runB" in log
+
+
+@need_tools
+def test_mismatched_mates_fail_early(data, tmp_path):
+    fa = str(data / "genome.fa")
+    fq = data / "fastq"
+    odd = tmp_path / "fq"
+    odd.mkdir()
+    for name in ("runA_1.fastq.gz", "runB_2.fastq.gz", "runB_1.fastq.gz"):   # runA has no R2
+        (odd / name).symlink_to(fq / name)
+    cmd = ["nextflow", "run", os.path.join(NF, "main.nf"), "-profile", "local",
+           "--sample_id", "bad", "--bwa_index", fa, "--genome_fasta", fa, "--chrom_sizes", str(data / "chrom.sizes"),
+           "--fq_input", str(odd / "{runA,runB}_{1,2}.fastq.gz"), "--outdir", str(tmp_path / "out"),
+           "--tmpdir", str(tmp_path / "tmp")]
+    (tmp_path / "out").mkdir()
+    r = subprocess.run(cmd, cwd=str(tmp_path / "out"), capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "Each run needs exactly one R1 and one R2 FASTQ" in r.stdout + r.stderr and "runA" in r.stdout + r.stderr
+    assert not (tmp_path / "out" / "work").exists() or not any((tmp_path / "out" / "work").iterdir())  # no task ran

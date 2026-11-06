@@ -38,7 +38,7 @@ ASSEMBLY="${ASSEMBLY:-}"                 # cooler --assembly label, e.g. mm10
 ALIGNER="${ALIGNER:-bwa-mem2}"           # bwa-mem2 (needs <BWA_INDEX>.0123 and .bwt.2bit.64) | bwa
 CHUNK_READS="${CHUNK_READS:-30000000}"   # reads per FASTQ chunk for parallel alignment
 
-PIPELINE_VERSION=1.1.0
+PIPELINE_VERSION=1.1.1-dev
 PREPROCESS_HIC_ENV=${PREPROCESS_HIC_ENV:-${HOME}/miniforge3/envs/preprocess-hic-${PIPELINE_VERSION}}
 # ============================================================
 

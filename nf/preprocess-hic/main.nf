@@ -10,6 +10,30 @@ if (!params.frag_bed && !params.genome_fasta) error "Set --frag_bed or --genome_
 // An unmatched glob gives an empty channel, and Nextflow would then report success with no outputs.
 if (!file(params.fq_input)) error "No FASTQs match --fq_input ${params.fq_input}"
 
+// Pair the FASTQs by run (from 1.1.1; Nextflow's fromFilePairs paired R1 of one run with R2 of another when the glob
+// had a {run1,run2} group). The run id is the file name without the mate tag and extension:
+// <run>[_.](R)1|2[_001].fastq|fq[.gz], e.g. SRR30681381_1.fastq.gz -> SRR30681381, S1_L001_R2_001.fastq.gz -> S1_L001.
+// For one run per glob this is the id fromFilePairs gave, so -resume of a 1.1.0 run reuses its tasks.
+def pair_fastqs(glob) {
+    def mate_re = ~/^(.+?)[_.]R?([12])(?:_001)?\.(?:fastq|fq)(?:\.gz)?$/
+    def files = file(glob)
+    files = (files instanceof List ? files : [files])
+    def runs = [:]
+    files.each { f ->
+        def m = f.name =~ mate_re
+        if (!m.matches()) error "FASTQ name not recognised as R1/R2 (<run>_1/_2, _R1/_R2, optional _001, .fastq/.fq[.gz]): ${f}"
+        def run = m.group(1)
+        def mate = m.group(2) as int
+        runs.get(run, [:]).get(mate, []) << f
+    }
+    def bad = runs.findAll { run, mates -> mates[1]?.size() != 1 || mates[2]?.size() != 1 }
+    if (bad) error "Each run needs exactly one R1 and one R2 FASTQ; found: " +
+        bad.collect { run, mates -> "${run}: R1 ${mates[1] ?: []}, R2 ${mates[2] ?: []}" }.join('; ')
+    return runs.sort().collect { run, mates -> [run, mates[1][0], mates[2][0]] }
+}
+def fastq_runs = pair_fastqs(params.fq_input)
+log.info "FASTQ runs: " + fastq_runs.collect { it[0] }.join(', ')
+
 def mcool_name = "${params.sample_id}.mapq_${params.mcool_min_mapq}.mcool"
 
 // Split each FASTQ pair into chunks of chunk_reads reads (as microc-preprocess 1.0.3+).
@@ -183,13 +207,13 @@ process hic_mcool {
 }
 
 workflow {
-    fastq_pairs = Channel.fromFilePairs(params.fq_input, flat: true, checkIfExists: true)
+    fastq_pairs = Channel.fromList(fastq_runs)
     split_fastq(fastq_pairs)
     // One (id, chunk_r1, chunk_r2) tuple per chunk; sorting by name (part_NNN) keeps R1 and R2 in step.
     fastq_splits = split_fastq.out.flatMap { id, r1s, r2s ->
         r1s = [r1s].flatten().sort { it.name }
         r2s = [r2s].flatten().sort { it.name }
-        if (r1s.size() != r2s.size()) error "split_fastq: ${r1s.size()} R1 but ${r2s.size()} R2 chunks for ${id}"
+        if (r1s.size() != r2s.size()) error "split_fastq: ${r1s.size()} R1 but ${r2s.size()} R2 chunks for run ${id} (R1 and R2 have different read counts)"
         [r1s, r2s].transpose().collect { r1, r2 -> [id, r1, r2] }
     }
     frags = params.frag_bed ? Channel.value(file(params.frag_bed, checkIfExists: true))
