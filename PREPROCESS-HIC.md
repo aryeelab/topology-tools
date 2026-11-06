@@ -92,8 +92,10 @@ chrom-sizes order. Mouse GRCm38 with DpnII+HinfI: 14.6M fragments (median 122 bp
   1.1.0 used Nextflow's `fromFilePairs`, which with a `{run1,run2}_{1,2}` glob paired R1 of one run with R2 of
   another (the R1/R2 chunk-count check stopped those runs; no wrong pairs were written).
 - `hic_align` asks for 40 GB (+16 GB per retry) instead of 28 GB: a 30M-read chunk peaks at 29.4 GB (mouse).
-- Outputs are unchanged, and the `split_fastq` and `hic_align` tasks hash as in 1.1.0, so `-resume` of a 1.1.0 run
-  reuses its finished chunks.
+- Outputs are unchanged (4M-pair smoke test at `MIN_MAPQ` 1 and 0: pairs, restriction stats and mcool byte-identical
+  to 1.1.0).
+- Resuming a run made with another release reuses only `split_fastq`: Nextflow hashes the `bin/` scripts a task uses
+  by path, and each release has its own checkout, so `digest_genome`, `hic_align` and later steps run again.
 
 ### Changes in 1.1.0
 - `MIN_MAPQ` (`pairtools parse --min-mapq`, default 1 as in 1.0.0). `MIN_MAPQ=0` keeps pairs with a multi-mapping

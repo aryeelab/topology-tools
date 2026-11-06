@@ -13,7 +13,7 @@ if (!file(params.fq_input)) error "No FASTQs match --fq_input ${params.fq_input}
 // Pair the FASTQs by run (from 1.1.1; Nextflow's fromFilePairs paired R1 of one run with R2 of another when the glob
 // had a {run1,run2} group). The run id is the file name without the mate tag and extension:
 // <run>[_.](R)1|2[_001].fastq|fq[.gz], e.g. SRR30681381_1.fastq.gz -> SRR30681381, S1_L001_R2_001.fastq.gz -> S1_L001.
-// For one run per glob this is the id fromFilePairs gave, so -resume of a 1.1.0 run reuses its tasks.
+// For one run per glob this is the id fromFilePairs gave (1.1.0), so -resume reuses 1.1.0's split_fastq tasks.
 def pair_fastqs(glob) {
     def mate_re = ~/^(.+?)[_.]R?([12])(?:_001)?\.(?:fastq|fq)(?:\.gz)?$/
     def files = file(glob)
